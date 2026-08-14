@@ -59,8 +59,9 @@
   form.inline label{display:flex;flex-direction:column;font-size:12px;color:#555;gap:4px;}
   form.inline input, form.inline select{padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
   .label-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px;}
-  .label-card{border:1px dashed #aaa;border-radius:6px;padding:10px;text-align:center;}
-  .label-card .qr{margin:0 auto 6px;}
+  .label-card{border:1px dashed #aaa;border-radius:6px;padding:10px;text-align:center;display:flex;flex-direction:column;align-items:center;}
+  .label-card .qr{margin:0 auto 6px;display:flex;justify-content:center;}
+  .label-card .qr img, .label-card .qr canvas{display:block;margin:0 auto;}
   .label-card .code{font-size:11px;color:#777;word-break:break-all;}
   .label-card .name{font-size:13px;font-weight:600;margin:4px 0 2px;}
   select.type-select{margin-bottom:10px;}
@@ -155,6 +156,13 @@
         <label>Name<input required id="assocName" placeholder="e.g. Jordan Smith"></label>
         <button class="btn" type="submit">Add Associate</button>
       </form>
+    </div>
+    <div class="card no-print">
+      <h3 style="margin-top:0;">Current Equipment</h3>
+      <table>
+        <thead><tr><th>Item</th><th>Code</th><th>Status</th><th></th></tr></thead>
+        <tbody id="manageEquipmentBody"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+      </table>
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Print Labels</h3>
@@ -337,7 +345,43 @@ if (firebaseReady) {
   db.collection('equipment').onSnapshot(snap => {
     allEquipment = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderStatus();
+    renderManageEquipmentList();
   });
+}
+
+/* ---------------- Manage tab: current equipment / remove ---------------- */
+function renderManageEquipmentList() {
+  const body = document.getElementById('manageEquipmentBody');
+  if (!body) return;
+  if (!allEquipment.length) {
+    body.innerHTML = '<tr><td colspan="4" class="muted">No equipment added yet</td></tr>';
+    return;
+  }
+  const rows = [...allEquipment].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  body.innerHTML = rows.map(e => `
+    <tr>
+      <td>${escapeHtml(e.name || '')}</td>
+      <td class="muted">${escapeHtml(e.id)}</td>
+      <td><span class="badge ${e.status}">${e.status === 'checked_out' ? 'Checked out' : 'Available'}</span></td>
+      <td><button class="btn secondary small remove-eq-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}" data-status="${e.status}">Remove</button></td>
+    </tr>`).join('');
+  body.querySelectorAll('.remove-eq-btn').forEach(btn => {
+    btn.addEventListener('click', () => removeEquipment(btn.dataset.id, btn.dataset.name, btn.dataset.status));
+  });
+}
+
+async function removeEquipment(id, name, status) {
+  if (status === 'checked_out') {
+    alert(`"${name}" is currently checked out. Scan it back in before removing it.`);
+    return;
+  }
+  if (!confirm(`Remove "${name}" (${id}) from the system? This can't be undone. Its scan history in the History tab will be kept.`)) return;
+  try {
+    await db.collection('equipment').doc(id).delete();
+  } catch (err) {
+    console.error(err);
+    alert('Could not remove equipment: ' + err.message);
+  }
 }
 
 function renderStatus() {
