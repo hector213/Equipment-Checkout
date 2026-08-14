@@ -793,6 +793,10 @@ if (firebaseReady) {
   db.collection('audits').orderBy('finishedAt', 'desc').limit(50).onSnapshot(snap => {
     allAudits = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderAuditHistory();
+  }, err => {
+    console.error(err);
+    const body = document.getElementById('auditHistoryBody');
+    if (body) body.innerHTML = `<tr><td colspan="5" class="muted">Could not load past audits: ${escapeHtml(err.message)}</td></tr>`;
   });
 }
 
