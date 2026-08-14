@@ -139,7 +139,7 @@
 
   <!-- ================= MANAGE TAB ================= -->
   <div class="tab" id="tab-manage">
-    <div class="card">
+    <div class="card no-print">
       <h3 style="margin-top:0;">Add Equipment</h3>
       <form class="inline" id="addEquipmentForm">
         <label>Barcode / Code<input required id="eqCode" placeholder="scan or type code"></label>
@@ -148,7 +148,7 @@
         <button class="btn" type="submit">Add Item</button>
       </form>
     </div>
-    <div class="card">
+    <div class="card no-print">
       <h3 style="margin-top:0;">Add Associate</h3>
       <form class="inline" id="addAssociateForm">
         <label>Badge Code<input required id="assocCode" placeholder="scan or type code"></label>
@@ -163,8 +163,8 @@
         <option value="associates">Associate badge labels</option>
       </select>
       <button class="btn secondary" id="printLabelsBtn">🖨️ Print This Set</button>
-      <div class="label-grid" id="labelGrid"></div>
     </div>
+    <div class="label-grid" id="labelGrid"></div>
   </div>
 
 </main>
