@@ -496,7 +496,7 @@ async function refreshLabelGrid() {
     card.appendChild(nameEl);
     card.appendChild(codeEl);
     grid.appendChild(card);
-    new QRCode(qrHolder, { text: d.id, width: 110, height: 110 });
+    new QRCode(qrHolder, { text: d.id, width: 66, height: 66 });
   });
   if (!snap.docs.length) grid.innerHTML = '<div class="muted">Nothing to show yet — add some above.</div>';
 }
