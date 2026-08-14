@@ -61,7 +61,6 @@
   /* Device status panel */
   .device-panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
   .device-panel-header h3{margin:0;}
-  #deviceSearch{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-bottom:10px;}
   .device-list{max-height:560px;overflow-y:auto;}
   .device-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border);}
   .device-row:last-child{border-bottom:none;}
@@ -122,13 +121,12 @@
         <div class="card muted">
           Flow: scan an <b>available</b> item → scan an <b>associate</b> badge to check it out.<br>
           Scan a <b>checked-out</b> item by itself to check it back in.<br>
-          Items marked <b>In Repair</b> or <b>Lost</b> can't be checked out until their status is reset on the right.<br>
+          Items marked <b>In Repair</b> or <b>Lost</b> can't be checked out until their status is reset from the Manage tab.<br>
           This box stays focused for a USB/Bluetooth scanner (acts like a keyboard + Enter).
         </div>
       </div>
       <div class="card">
         <div class="device-panel-header"><h3>Device Status</h3></div>
-        <input id="deviceSearch" placeholder="Search devices…">
         <div class="device-list" id="deviceList"><div class="muted">Loading…</div></div>
       </div>
     </div>
@@ -176,8 +174,8 @@
     <div class="card no-print">
       <h3 style="margin-top:0;">Current Equipment</h3>
       <table>
-        <thead><tr><th>Item</th><th>Code</th><th>Status</th><th></th></tr></thead>
-        <tbody id="manageEquipmentBody"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+        <thead><tr><th>Item</th><th>Code</th><th>Status</th><th>Change Status</th><th></th></tr></thead>
+        <tbody id="manageEquipmentBody"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="card no-print">
@@ -266,10 +264,11 @@ cancelBtn.addEventListener('click', () => {
 });
 
 // keep focus on the scan input at all times while on the Scan tab
+const NO_REFOCUS_TAGS = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'OPTION', 'A'];
 document.addEventListener('click', (e) => {
-  if (document.getElementById('tab-scan').classList.contains('active') && e.target.tagName !== 'BUTTON') {
-    scanInput.focus();
-  }
+  if (!document.getElementById('tab-scan').classList.contains('active')) return;
+  if (NO_REFOCUS_TAGS.includes(e.target.tagName)) return;
+  scanInput.focus();
 });
 
 scanInput.addEventListener('keydown', async (e) => {
@@ -380,18 +379,12 @@ if (firebaseReady) {
 function renderDeviceList() {
   const list = document.getElementById('deviceList');
   if (!list) return;
-  const q = (document.getElementById('deviceSearch').value || '').toLowerCase();
-  const rows = [...allEquipment]
-    .filter(e => (e.name + ' ' + e.id + ' ' + (e.assignedToName || '')).toLowerCase().includes(q))
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  if (!rows.length) { list.innerHTML = '<div class="muted">No matching devices</div>'; return; }
-  const ALL_STATUSES = ['available', 'in_repair', 'lost'];
+  const rows = [...allEquipment].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (!rows.length) { list.innerHTML = '<div class="muted">No equipment added yet</div>'; return; }
   list.innerHTML = rows.map(e => {
     const meta = e.status === 'checked_out'
       ? `With ${escapeHtml(e.assignedToName || 'unknown')}`
       : escapeHtml(e.id);
-    const options = ALL_STATUSES.filter(s => s !== e.status)
-      .map(s => `<option value="${s}">Mark ${statusLabel(s)}</option>`).join('');
     return `
       <div class="device-row">
         <div class="device-icon">${statusIcon(e.status)}</div>
@@ -399,26 +392,14 @@ function renderDeviceList() {
           <div class="dname">${escapeHtml(e.name || '')}</div>
           <div class="dmeta">${meta}</div>
         </div>
-        <div class="device-actions">
-          <span class="badge ${e.status}">${statusLabel(e.status)}</span>
-          <select class="dev-status-select" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}" data-status="${e.status}">
-            <option value="" selected disabled>Set status…</option>
-            ${options}
-          </select>
-        </div>
+        <span class="badge ${e.status}">${statusLabel(e.status)}</span>
       </div>`;
   }).join('');
-  list.querySelectorAll('.dev-status-select').forEach(sel => {
-    sel.addEventListener('change', () => {
-      setEquipmentStatus(sel.dataset.id, sel.dataset.name, sel.dataset.status, sel.value);
-    });
-  });
 }
-document.getElementById('deviceSearch').addEventListener('input', renderDeviceList);
 
 async function setEquipmentStatus(id, name, oldStatus, newStatus) {
   if (!newStatus || newStatus === oldStatus) return;
-  if (!confirm(`Mark "${name}" as ${statusLabel(newStatus)}?`)) { renderDeviceList(); return; }
+  if (!confirm(`Mark "${name}" as ${statusLabel(newStatus)}?`)) { renderManageEquipmentList(); return; }
   try {
     const update = { status: newStatus };
     if (newStatus !== 'checked_out') {
@@ -441,19 +422,35 @@ function renderManageEquipmentList() {
   const body = document.getElementById('manageEquipmentBody');
   if (!body) return;
   if (!allEquipment.length) {
-    body.innerHTML = '<tr><td colspan="4" class="muted">No equipment added yet</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="muted">No equipment added yet</td></tr>';
     return;
   }
+  const ALL_STATUSES = ['available', 'in_repair', 'lost'];
   const rows = [...allEquipment].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  body.innerHTML = rows.map(e => `
+  body.innerHTML = rows.map(e => {
+    const options = ALL_STATUSES.filter(s => s !== e.status)
+      .map(s => `<option value="${s}">Mark ${statusLabel(s)}</option>`).join('');
+    return `
     <tr>
       <td>${escapeHtml(e.name || '')}</td>
       <td class="muted">${escapeHtml(e.id)}</td>
       <td><span class="badge ${e.status}">${statusLabel(e.status)}</span></td>
+      <td>
+        <select class="dev-status-select" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}" data-status="${e.status}">
+          <option value="" selected disabled>Set status…</option>
+          ${options}
+        </select>
+      </td>
       <td><button class="btn secondary small remove-eq-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}" data-status="${e.status}">Remove</button></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
   body.querySelectorAll('.remove-eq-btn').forEach(btn => {
     btn.addEventListener('click', () => removeEquipment(btn.dataset.id, btn.dataset.name, btn.dataset.status));
+  });
+  body.querySelectorAll('.dev-status-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      setEquipmentStatus(sel.dataset.id, sel.dataset.name, sel.dataset.status, sel.value);
+    });
   });
 }
 
