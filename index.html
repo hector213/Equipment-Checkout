@@ -31,8 +31,7 @@
   nav button{flex:1;padding:12px;background:none;border:none;color:#c9d4e0;font-size:14px;cursor:pointer;border-bottom:3px solid transparent;}
   nav button.active{color:#fff;border-bottom-color:var(--orange);font-weight:600;}
   main{max-width:1100px;margin:0 auto;padding:20px;}
-  .scan-layout{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;align-items:start;}
-  @media (max-width:800px){.scan-layout{grid-template-columns:1fr;}}
+  .scan-layout{display:flex;flex-direction:column;gap:0;}
   .tab{display:none;}
   .tab.active{display:block;}
   .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;}
@@ -72,9 +71,9 @@
   /* Device status panel */
   .device-panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
   .device-panel-header h3{margin:0;}
-  .device-list{max-height:560px;overflow-y:auto;}
-  .device-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border);}
-  .device-row:last-child{border-bottom:none;}
+  .device-list{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+  @media (max-width:640px){.device-list{grid-template-columns:1fr;}}
+  .device-row{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:8px;}
   .device-icon{font-size:20px;width:26px;text-align:center;flex-shrink:0;}
   .device-info{flex:1;min-width:0;}
   .device-info .dname{font-weight:600;font-size:14px;line-height:1.3;}
