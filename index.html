@@ -396,13 +396,18 @@ document.getElementById('addEquipmentForm').addEventListener('submit', async (e)
   const name = document.getElementById('eqName').value.trim();
   const category = document.getElementById('eqCategory').value.trim();
   if (!code || !name) return;
-  await db.collection('equipment').doc(code).set({
-    name, category: category || null, status: 'available',
-    assignedTo: null, assignedToName: null, assignedAt: null
-  });
-  e.target.reset();
-  refreshLabelGrid();
-  alert('Equipment added: ' + name);
+  try {
+    await db.collection('equipment').doc(code).set({
+      name, category: category || null, status: 'available',
+      assignedTo: null, assignedToName: null, assignedAt: null
+    });
+    e.target.reset();
+    refreshLabelGrid();
+    alert('Equipment added: ' + name);
+  } catch (err) {
+    console.error(err);
+    alert('Could not add equipment: ' + err.message);
+  }
 });
 
 document.getElementById('addAssociateForm').addEventListener('submit', async (e) => {
@@ -411,10 +416,15 @@ document.getElementById('addAssociateForm').addEventListener('submit', async (e)
   const code = document.getElementById('assocCode').value.trim();
   const name = document.getElementById('assocName').value.trim();
   if (!code || !name) return;
-  await db.collection('associates').doc(code).set({ name, active: true });
-  e.target.reset();
-  refreshLabelGrid();
-  alert('Associate added: ' + name);
+  try {
+    await db.collection('associates').doc(code).set({ name, active: true });
+    e.target.reset();
+    refreshLabelGrid();
+    alert('Associate added: ' + name);
+  } catch (err) {
+    console.error(err);
+    alert('Could not add associate: ' + err.message);
+  }
 });
 
 document.getElementById('labelTypeSelect').addEventListener('change', refreshLabelGrid);
