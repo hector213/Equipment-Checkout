@@ -158,7 +158,7 @@
     <div class="scan-layout">
       <div>
         <div class="card">
-          <div class="scan-state idle" id="scanState">Scan an equipment barcode to begin</div>
+          <div class="scan-state idle" id="scanState">Scan an equipment barcode, or an associate badge to check items back in</div>
           <div class="pending-item" id="pendingLine"></div>
           <input id="scanInput" type="text" placeholder="Click here, then scan…" autocomplete="off" autofocus>
           <div class="cancel-row">
@@ -166,8 +166,10 @@
           </div>
         </div>
         <div class="card muted">
-          Flow: scan an <b>available</b> item → scan an <b>associate</b> badge to check it out.<br>
-          Scan a <b>checked-out</b> item by itself to check it back in.<br>
+          <b>Check out:</b> scan an <b>available</b> item → scan an <b>associate</b> badge.<br>
+          <b>Check in:</b> scan the <b>associate</b>'s badge first → then scan the item(s) they're returning.
+          (Scanning a checked-out item by itself no longer checks it in — this stops one associate from returning
+          another's item without their badge.)<br>
           Items marked <b>In Repair</b> or <b>Lost</b> can't be checked out until their status is reset from the Manage tab.<br>
           This box stays focused for a USB/Bluetooth scanner (acts like a keyboard + Enter).
         </div>
@@ -423,7 +425,10 @@ const scanState = document.getElementById('scanState');
 const pendingLine = document.getElementById('pendingLine');
 const cancelBtn = document.getElementById('cancelBtn');
 
-let pendingEquipment = null; // {id, data}
+// pendingAction is either:
+//   { mode: 'checkout', equipmentId, equipmentData }                — awaiting the associate's badge
+//   { mode: 'checkin', associateId, associateName, remainingIds }   — awaiting the item(s) being returned
+let pendingAction = null;
 let pendingTimeout = null;
 
 function setState(kind, msg) {
@@ -432,15 +437,23 @@ function setState(kind, msg) {
 }
 
 function resetPending() {
-  pendingEquipment = null;
+  pendingAction = null;
   pendingLine.textContent = '';
   cancelBtn.style.display = 'none';
   if (pendingTimeout) { clearTimeout(pendingTimeout); pendingTimeout = null; }
 }
 
+function armPendingTimeout(message) {
+  if (pendingTimeout) clearTimeout(pendingTimeout);
+  pendingTimeout = setTimeout(() => {
+    resetPending();
+    setState('idle', message);
+  }, 20000);
+}
+
 cancelBtn.addEventListener('click', () => {
   resetPending();
-  setState('idle', 'Scan an equipment barcode to begin');
+  setState('idle', 'Scan an equipment barcode, or an associate badge to check items back in');
 });
 
 // keep focus on the scan input at all times while on the Scan tab
@@ -463,78 +476,129 @@ scanInput.addEventListener('keydown', async (e) => {
 
 async function handleScan(code) {
   try {
-    if (!pendingEquipment) {
-      // Expecting an equipment scan
-      const eqSnap = await db.collection('equipment').doc(code).get();
-      if (!eqSnap.exists) {
-        // maybe they scanned an associate badge out of order
-        const assocSnap = await db.collection('associates').doc(code).get();
-        if (assocSnap.exists) {
-          setState('error', `That's an associate badge (${assocSnap.data().name}). Scan an item first.`);
-        } else {
-          setState('error', `Unrecognized code: ${code}`);
-        }
-        return;
-      }
-      const eq = eqSnap.data();
-      if (eq.status === 'in_repair' || eq.status === 'lost') {
-        setState('error', `${eq.name} is marked ${statusLabel(eq.status)} and can't be checked out. Reset its status in the Device Status panel first.`);
-        return;
-      }
-      if (eq.status === 'checked_out') {
-        // check-in
-        await db.collection('equipment').doc(code).update({
-          status: 'available', assignedTo: null, assignedToName: null, assignedAt: null
-        });
-        await db.collection('logs').add({
-          action: 'check_in', equipmentId: code, equipmentName: eq.name,
-          associateId: eq.assignedTo || null, associateName: eq.assignedToName || null,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        setState('success', `✔ Checked in: ${eq.name}${eq.assignedToName ? ' (was with ' + eq.assignedToName + ')' : ''}`);
-        resetPending();
-      } else {
-        // awaiting associate scan
-        pendingEquipment = { id: code, data: eq };
-        pendingLine.textContent = `Now scan the associate badge to check out: ${eq.name}`;
-        setState('waiting', `📦 ${eq.name} — waiting for associate badge…`);
-        cancelBtn.style.display = 'inline-block';
-        pendingTimeout = setTimeout(() => {
-          resetPending();
-          setState('idle', 'Timed out waiting for associate badge. Scan an equipment barcode to begin');
-        }, 20000);
-      }
-    } else {
-      // Expecting an associate scan
-      const assocSnap = await db.collection('associates').doc(code).get();
-      if (!assocSnap.exists) {
-        // maybe they scanned a different item instead — restart with that item
-        const eqSnap = await db.collection('equipment').doc(code).get();
-        if (eqSnap.exists) {
-          resetPending();
-          setState('error', 'Expected an associate badge, got an item. Restarting — scan it again.');
-          return handleScan(code);
-        }
-        setState('error', `Unrecognized associate code: ${code}`);
-        return;
-      }
-      const assoc = assocSnap.data();
-      const eq = pendingEquipment;
-      await db.collection('equipment').doc(eq.id).update({
-        status: 'checked_out', assignedTo: code, assignedToName: assoc.name,
-        assignedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      await db.collection('logs').add({
-        action: 'check_out', equipmentId: eq.id, equipmentName: eq.data.name,
-        associateId: code, associateName: assoc.name,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      setState('success', `✔ ${eq.data.name} checked out to ${assoc.name}`);
-      resetPending();
+    if (!pendingAction) {
+      await handleFreshScan(code);
+    } else if (pendingAction.mode === 'checkout') {
+      await handleCheckoutAssociateScan(code);
+    } else if (pendingAction.mode === 'checkin') {
+      await handleCheckinItemScan(code);
     }
   } catch (err) {
     console.error(err);
     setState('error', 'Error: ' + err.message);
+  }
+}
+
+// No pending action yet — figure out whether they scanned an item (start a
+// check-out) or an associate badge (start a check-in for whatever they have).
+async function handleFreshScan(code) {
+  const eqSnap = await db.collection('equipment').doc(code).get();
+  if (eqSnap.exists) {
+    const eq = eqSnap.data();
+    if (eq.status === 'in_repair' || eq.status === 'lost') {
+      setState('error', `${eq.name} is marked ${statusLabel(eq.status)} and can't be checked out. Reset its status in the Device Status panel first.`);
+      return;
+    }
+    if (eq.status === 'checked_out') {
+      setState('error', `${eq.name} is checked out to ${eq.assignedToName || 'someone'}. Have them scan their badge first to check it in.`);
+      return;
+    }
+    // available — start a check-out, awaiting the associate's badge
+    pendingAction = { mode: 'checkout', equipmentId: code, equipmentData: eq };
+    pendingLine.textContent = `Now scan the associate badge to check out: ${eq.name}`;
+    setState('waiting', `📦 ${eq.name} — waiting for associate badge…`);
+    cancelBtn.style.display = 'inline-block';
+    armPendingTimeout('Timed out waiting for associate badge. Scan an equipment barcode to begin');
+    return;
+  }
+
+  const assocSnap = await db.collection('associates').doc(code).get();
+  if (assocSnap.exists) {
+    const assoc = assocSnap.data();
+    const theirItems = allEquipment.filter(e => e.status === 'checked_out' && e.assignedTo === code);
+    if (!theirItems.length) {
+      setState('error', `${assoc.name} doesn't have anything checked out right now.`);
+      return;
+    }
+    pendingAction = { mode: 'checkin', associateId: code, associateName: assoc.name, remainingIds: theirItems.map(i => i.id) };
+    pendingLine.textContent = `Now scan the item(s) ${assoc.name} is returning (${theirItems.length} checked out: ${theirItems.map(i => i.name).join(', ')})`;
+    setState('waiting', `🧍 ${assoc.name} — waiting for item(s) to check in…`);
+    cancelBtn.style.display = 'inline-block';
+    armPendingTimeout('Timed out waiting for a returned item. Scan an equipment barcode or associate badge to begin');
+    return;
+  }
+
+  setState('error', `Unrecognized code: ${code}`);
+}
+
+// Awaiting an associate's badge to complete a check-out that's already pending.
+async function handleCheckoutAssociateScan(code) {
+  const assocSnap = await db.collection('associates').doc(code).get();
+  if (!assocSnap.exists) {
+    // maybe they scanned a different item instead — restart with that item
+    const eqSnap = await db.collection('equipment').doc(code).get();
+    if (eqSnap.exists) {
+      resetPending();
+      setState('error', 'Expected an associate badge, got an item. Restarting — scan it again.');
+      return handleScan(code);
+    }
+    setState('error', `Unrecognized associate code: ${code}`);
+    return;
+  }
+  const assoc = assocSnap.data();
+  const eq = pendingAction;
+  await db.collection('equipment').doc(eq.equipmentId).update({
+    status: 'checked_out', assignedTo: code, assignedToName: assoc.name,
+    assignedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  await db.collection('logs').add({
+    action: 'check_out', equipmentId: eq.equipmentId, equipmentName: eq.equipmentData.name,
+    associateId: code, associateName: assoc.name,
+    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  setState('success', `✔ ${eq.equipmentData.name} checked out to ${assoc.name}`);
+  resetPending();
+}
+
+// Awaiting item scan(s) to check in for the associate who already scanned their badge.
+async function handleCheckinItemScan(code) {
+  const eqSnap = await db.collection('equipment').doc(code).get();
+  if (!eqSnap.exists) {
+    // maybe they scanned a different associate's badge instead — restart for that associate
+    const assocSnap = await db.collection('associates').doc(code).get();
+    if (assocSnap.exists) {
+      resetPending();
+      return handleScan(code);
+    }
+    setState('error', `Unrecognized code: ${code}`);
+    return;
+  }
+  const eq = eqSnap.data();
+  const pending = pendingAction;
+  if (!pending.remainingIds.includes(code)) {
+    // Not one of the items this associate is returning — rather than making
+    // the whole scanner wait on the rest of their return, treat this as the
+    // start of a brand-new, unrelated transaction.
+    resetPending();
+    return handleFreshScan(code);
+  }
+  await db.collection('equipment').doc(code).update({
+    status: 'available', assignedTo: null, assignedToName: null, assignedAt: null
+  });
+  await db.collection('logs').add({
+    action: 'check_in', equipmentId: code, equipmentName: eq.name,
+    associateId: pending.associateId, associateName: pending.associateName,
+    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  pending.remainingIds = pending.remainingIds.filter(id => id !== code);
+  if (!pending.remainingIds.length) {
+    setState('success', `✔ Checked in: ${eq.name} (all items returned for ${pending.associateName})`);
+    resetPending();
+  } else {
+    setState('success', `✔ Checked in: ${eq.name} — ${pending.remainingIds.length} more item(s) still checked out to ${pending.associateName}`);
+    const stillOut = allEquipment.filter(e => pending.remainingIds.includes(e.id)).map(e => e.name).join(', ');
+    pendingLine.textContent = `Scan the remaining item(s) ${pending.associateName} is returning: ${stillOut}`;
+    armPendingTimeout('Timed out waiting for a returned item. Scan an equipment barcode or associate badge to begin');
   }
 }
 
