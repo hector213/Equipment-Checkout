@@ -71,9 +71,7 @@
   /* Device status panel */
   .device-panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
   .device-panel-header h3{margin:0;}
-  .device-list{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;}
-  @media (max-width:1000px){.device-list{grid-template-columns:repeat(3,1fr);}}
-  @media (max-width:640px){.device-list{grid-template-columns:1fr;}}
+  .device-list{display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:10px;}
   .device-row{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--border);border-radius:8px;}
   .device-row .device-top{display:flex;align-items:center;justify-content:space-between;gap:6px;}
   .device-icon{font-size:18px;flex-shrink:0;}
