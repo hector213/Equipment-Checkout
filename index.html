@@ -8,6 +8,7 @@
 <!-- Firebase (compat SDK — simplest for a single-file app) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
 <!-- QR code generator, used on the Manage tab to print labels -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -94,6 +95,21 @@
   select.type-select{margin-bottom:10px;}
   .muted{color:#777;font-size:13px;}
   .config-warning{background:#fdeceb;border:1px solid #f3b9b3;color:#7a2018;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:14px;}
+
+  /* Login screen */
+  #loginScreen{position:fixed;inset:0;background:var(--navy);display:flex;align-items:center;justify-content:center;z-index:1000;}
+  #loginScreen .login-card{background:#fff;border-radius:12px;padding:32px;width:320px;max-width:90vw;}
+  #loginScreen h2{margin:0 0 4px;color:var(--navy);}
+  #loginScreen p.muted{margin-top:0;margin-bottom:20px;}
+  #loginScreen label{display:block;font-size:12px;color:#555;margin-bottom:4px;margin-top:14px;}
+  #loginScreen input{width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
+  #loginScreen button{width:100%;margin-top:20px;}
+  #loginError{color:#a52a20;font-size:13px;margin-top:10px;min-height:16px;}
+  .account-bar{display:flex;align-items:center;gap:10px;font-size:13px;}
+  .account-bar button{background:none;border:1px solid rgba(255,255,255,.4);color:#fff;padding:5px 10px;border-radius:6px;font-size:12px;cursor:pointer;}
+  .account-bar button:hover{background:rgba(255,255,255,.12);}
+  .badge.active-yes{background:#e9f9ee;color:#146c34;}
+  .badge.active-no{background:#f0f0f0;color:#666;}
   @media print{
     header, nav, .no-print{display:none !important;}
     body{background:#fff;}
@@ -103,8 +119,27 @@
 </head>
 <body>
 
+<div id="loginScreen">
+  <div class="login-card">
+    <h2>🔧 Equipment Check-Out</h2>
+    <p class="muted">Sign in to continue.</p>
+    <form id="loginForm">
+      <label>Email<input type="email" id="loginEmail" required autocomplete="username"></label>
+      <label>Password<input type="password" id="loginPassword" required autocomplete="current-password"></label>
+      <button class="btn" type="submit">Sign In</button>
+      <div id="loginError"></div>
+    </form>
+  </div>
+</div>
+
+<div id="appShell" style="display:none;">
+
 <header>
   <h1>🔧 Equipment Check-Out</h1>
+  <div class="account-bar">
+    <span id="currentUserLabel"></span>
+    <button id="logoutBtn">Log Out</button>
+  </div>
   <span class="status-pill" id="connStatus">connecting…</span>
 </header>
 
@@ -113,6 +148,7 @@
   <button data-tab="history">History</button>
   <button data-tab="audit">Audit</button>
   <button data-tab="manage">Manage / Labels</button>
+  <button data-tab="accounts">Accounts</button>
 </nav>
 
 <main>
@@ -182,8 +218,8 @@
     <div class="card no-print">
       <h3 style="margin-top:0;">Past Audits</h3>
       <table>
-        <thead><tr><th>Date</th><th>Found</th><th>Missing</th><th>Flags</th><th></th></tr></thead>
-        <tbody id="auditHistoryBody"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+        <thead><tr><th>Date</th><th>Audited By</th><th>Found</th><th>Missing</th><th>Flags</th><th></th></tr></thead>
+        <tbody id="auditHistoryBody"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -232,7 +268,31 @@
     <div class="label-grid" id="labelGrid"></div>
   </div>
 
+  <!-- ================= ACCOUNTS TAB ================= -->
+  <div class="tab" id="tab-accounts">
+    <div class="card no-print">
+      <h3 style="margin-top:0;">Add User</h3>
+      <p class="muted">Creates a login for someone to access this app. They'll sign in with the email and password you set here.</p>
+      <form class="inline" id="addUserForm">
+        <label>Name<input required id="newUserName" placeholder="e.g. Jordan Smith"></label>
+        <label>Email<input required type="email" id="newUserEmail" placeholder="name@example.com"></label>
+        <label>Temporary Password<input required type="text" id="newUserPassword" placeholder="min. 6 characters"></label>
+        <button class="btn" type="submit">Add User</button>
+      </form>
+    </div>
+    <div class="card no-print">
+      <h3 style="margin-top:0;">Current Users</h3>
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Status</th><th></th></tr></thead>
+        <tbody id="manageUsersBody"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+      </table>
+      <p class="muted" style="margin-top:12px;">Deactivating someone blocks them from signing in and using the app, but doesn't delete their login outright.</p>
+    </div>
+  </div>
+
 </main>
+
+</div><!-- /appShell -->
 
 <script>
 /* =========================================================================
@@ -259,14 +319,91 @@ try {
 } catch (e) { console.error(e); }
 
 const connStatus = document.getElementById('connStatus');
+const loginScreen = document.getElementById('loginScreen');
+const appShell = document.getElementById('appShell');
+
 if (!firebaseReady) {
   connStatus.textContent = "⚠ not configured";
   const warn = document.createElement('div');
   warn.className = 'config-warning';
   warn.innerHTML = "<b>Firebase isn't configured yet.</b> Open index.html, fill in <code>firebaseConfig</code> near the bottom of the file with your project's values, then reload this page. See README.md for step-by-step instructions.";
   document.querySelector('main').prepend(warn);
+  // Nothing to log into yet — show the app shell directly so this warning is visible.
+  loginScreen.style.display = 'none';
+  appShell.style.display = 'block';
 } else {
   connStatus.textContent = "● live";
+}
+
+/* ---------------- Auth ---------------- */
+let auth = null;
+let currentUser = null; // { uid, email, displayName }
+let appStarted = false;
+
+if (firebaseReady) {
+  auth = firebase.auth();
+
+  auth.onAuthStateChanged(async (user) => {
+    const loginError = document.getElementById('loginError');
+    if (!user) {
+      currentUser = null;
+      loginScreen.style.display = 'flex';
+      appShell.style.display = 'none';
+      return;
+    }
+    try {
+      const userDoc = await db.collection('users').doc(user.uid).get();
+      if (!userDoc.exists || userDoc.data().active !== true) {
+        loginError.textContent = userDoc.exists
+          ? 'This account has been deactivated. Contact your administrator.'
+          : 'This account is not set up in this app yet. Contact your administrator.';
+        await auth.signOut();
+        loginScreen.style.display = 'flex';
+        appShell.style.display = 'none';
+        return;
+      }
+      currentUser = { uid: user.uid, email: user.email, displayName: userDoc.data().displayName || user.email };
+      document.getElementById('currentUserLabel').textContent = `Signed in as ${currentUser.displayName}`;
+      loginError.textContent = '';
+      loginScreen.style.display = 'none';
+      appShell.style.display = 'block';
+      startApp();
+    } catch (err) {
+      console.error(err);
+      loginError.textContent = 'Could not verify your account: ' + err.message;
+      await auth.signOut();
+    }
+  });
+
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+    try {
+      await auth.signInWithEmailAndPassword(email, password);
+    } catch (err) {
+      errEl.textContent = err.message;
+    }
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    auth.signOut().then(() => location.reload());
+  });
+}
+
+// Starts all the realtime Firestore listeners exactly once, only after a
+// signed-in, active user has been confirmed by onAuthStateChanged above.
+function startApp() {
+  if (appStarted) return;
+  appStarted = true;
+  initEquipmentListener();
+  initAssociatesListener();
+  initLogsListener();
+  initAuditsListener();
+  initUsersListener();
+  refreshLabelGrid();
 }
 
 /* ---------------- Tabs ---------------- */
@@ -411,7 +548,7 @@ function statusIcon(status) {
 
 /* ---------------- Device Status panel (Scan tab) ---------------- */
 let allEquipment = [];
-if (firebaseReady) {
+function initEquipmentListener() {
   db.collection('equipment').onSnapshot(snap => {
     allEquipment = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderDeviceList();
@@ -513,7 +650,7 @@ async function removeEquipment(id, name, status) {
 
 /* ---------------- Manage tab: current associates / remove ---------------- */
 let allAssociates = [];
-if (firebaseReady) {
+function initAssociatesListener() {
   db.collection('associates').onSnapshot(snap => {
     allAssociates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderManageAssociateList();
@@ -556,7 +693,7 @@ async function removeAssociate(id, name) {
 
 /* ---------------- History tab ---------------- */
 let allLogs = [];
-if (firebaseReady) {
+function initLogsListener() {
   db.collection('logs').orderBy('timestamp', 'desc').limit(300).onSnapshot(snap => {
     allLogs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderHistory();
@@ -712,6 +849,7 @@ document.getElementById('finishAuditBtn').addEventListener('click', async () => 
   });
   const summary = {
     finishedAtLabel: new Date().toLocaleString(),
+    auditedBy: (currentUser && currentUser.displayName) || 'Unknown',
     total: results.length,
     foundCount: results.filter(r => r.found).length,
     missingCount: results.filter(r => r.flag === 'MISSING').length,
@@ -723,6 +861,7 @@ document.getElementById('finishAuditBtn').addEventListener('click', async () => 
   try {
     await db.collection('audits').add({
       finishedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      auditedBy: summary.auditedBy,
       total: summary.total, foundCount: summary.foundCount, missingCount: summary.missingCount,
       unexpectedCount: summary.unexpectedCount, recoveredCount: summary.recoveredCount,
       results: summary.results, unknownScans: summary.unknownScans
@@ -742,7 +881,7 @@ function generateAuditPDF(summary) {
   doc.setFontSize(16);
   doc.text('Equipment Inventory Audit', 14, 18);
   doc.setFontSize(10);
-  doc.text(`Completed: ${summary.finishedAtLabel}`, 14, 26);
+  doc.text(`Completed: ${summary.finishedAtLabel}   Audited by: ${summary.auditedBy || 'Unknown'}`, 14, 26);
   doc.text(
     `Total: ${summary.total}   Found: ${summary.foundCount}   Missing: ${summary.missingCount}   ` +
     `Found Unexpectedly: ${summary.unexpectedCount}   Recovered: ${summary.recoveredCount}`,
@@ -789,26 +928,27 @@ function generateAuditPDF(summary) {
 }
 
 let allAudits = [];
-if (firebaseReady) {
+function initAuditsListener() {
   db.collection('audits').orderBy('finishedAt', 'desc').limit(50).onSnapshot(snap => {
     allAudits = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderAuditHistory();
   }, err => {
     console.error(err);
     const body = document.getElementById('auditHistoryBody');
-    if (body) body.innerHTML = `<tr><td colspan="5" class="muted">Could not load past audits: ${escapeHtml(err.message)}</td></tr>`;
+    if (body) body.innerHTML = `<tr><td colspan="6" class="muted">Could not load past audits: ${escapeHtml(err.message)}</td></tr>`;
   });
 }
 
 function renderAuditHistory() {
   const body = document.getElementById('auditHistoryBody');
   if (!body) return;
-  if (!allAudits.length) { body.innerHTML = '<tr><td colspan="5" class="muted">No audits recorded yet</td></tr>'; return; }
+  if (!allAudits.length) { body.innerHTML = '<tr><td colspan="6" class="muted">No audits recorded yet</td></tr>'; return; }
   body.innerHTML = allAudits.map(a => {
     const flagCount = (a.missingCount || 0) + (a.unexpectedCount || 0) + (a.recoveredCount || 0);
     const when = a.finishedAt && a.finishedAt.toDate ? a.finishedAt.toDate().toLocaleString() : '…';
     return `<tr>
       <td class="muted">${when}</td>
+      <td>${escapeHtml(a.auditedBy || 'Unknown')}</td>
       <td>${a.foundCount || 0} / ${a.total || 0}</td>
       <td>${a.missingCount || 0}</td>
       <td>${flagCount}</td>
@@ -821,6 +961,7 @@ function renderAuditHistory() {
       if (record) {
         generateAuditPDF({
           finishedAtLabel: record.finishedAt && record.finishedAt.toDate ? record.finishedAt.toDate().toLocaleString() : '',
+          auditedBy: record.auditedBy,
           total: record.total, foundCount: record.foundCount, missingCount: record.missingCount,
           unexpectedCount: record.unexpectedCount, recoveredCount: record.recoveredCount,
           results: record.results || [], unknownScans: record.unknownScans || []
@@ -829,6 +970,91 @@ function renderAuditHistory() {
     });
   });
 }
+
+/* ---------------- Accounts tab ---------------- */
+let allUsers = [];
+function initUsersListener() {
+  db.collection('users').onSnapshot(snap => {
+    allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderUsersList();
+  }, err => {
+    console.error(err);
+    const body = document.getElementById('manageUsersBody');
+    if (body) body.innerHTML = `<tr><td colspan="4" class="muted">Could not load users: ${escapeHtml(err.message)}</td></tr>`;
+  });
+}
+
+function renderUsersList() {
+  const body = document.getElementById('manageUsersBody');
+  if (!body) return;
+  if (!allUsers.length) { body.innerHTML = '<tr><td colspan="4" class="muted">No users added yet</td></tr>'; return; }
+  const rows = [...allUsers].sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+  body.innerHTML = rows.map(u => `
+    <tr>
+      <td>${escapeHtml(u.displayName || '')}${u.id === (currentUser && currentUser.uid) ? ' <span class="muted">(you)</span>' : ''}</td>
+      <td class="muted">${escapeHtml(u.email || '')}</td>
+      <td><span class="badge ${u.active ? 'active-yes' : 'active-no'}">${u.active ? 'Active' : 'Deactivated'}</span></td>
+      <td><button class="btn secondary small toggle-user-btn" data-id="${escapeHtml(u.id)}" data-active="${u.active ? '1' : '0'}" data-name="${escapeHtml(u.displayName || u.email || '')}">${u.active ? 'Deactivate' : 'Reactivate'}</button></td>
+    </tr>`).join('');
+  body.querySelectorAll('.toggle-user-btn').forEach(btn => {
+    btn.addEventListener('click', () => toggleUserActive(btn.dataset.id, btn.dataset.active === '1', btn.dataset.name));
+  });
+}
+
+async function toggleUserActive(uid, isCurrentlyActive, name) {
+  if (currentUser && uid === currentUser.uid && isCurrentlyActive) {
+    alert("You can't deactivate your own account while signed in as it.");
+    return;
+  }
+  const verb = isCurrentlyActive ? 'deactivate' : 'reactivate';
+  if (!confirm(`Are you sure you want to ${verb} ${name}?`)) return;
+  try {
+    await db.collection('users').doc(uid).update({ active: !isCurrentlyActive });
+  } catch (err) {
+    console.error(err);
+    alert(`Could not ${verb} this user: ` + err.message);
+  }
+}
+
+// Creating a user with the client SDK normally signs the browser in AS that
+// new user, which would kick the admin out of their own session. Working
+// around that with a second, throwaway Firebase app instance that we use
+// just for the signup call, then immediately sign out of and discard —
+// the admin's own session (on the default app) is never touched.
+function getSecondaryAuth() {
+  let secondaryApp;
+  try {
+    secondaryApp = firebase.app('Secondary');
+  } catch (e) {
+    secondaryApp = firebase.initializeApp(firebaseConfig, 'Secondary');
+  }
+  return secondaryApp.auth();
+}
+
+document.getElementById('addUserForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!firebaseReady) return alert('Configure Firebase first.');
+  const name = document.getElementById('newUserName').value.trim();
+  const email = document.getElementById('newUserEmail').value.trim();
+  const password = document.getElementById('newUserPassword').value;
+  if (!name || !email || !password) return;
+  if (password.length < 6) return alert('Password must be at least 6 characters.');
+  try {
+    const secondaryAuth = getSecondaryAuth();
+    const cred = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+    await cred.user.updateProfile({ displayName: name });
+    await secondaryAuth.signOut();
+    await db.collection('users').doc(cred.user.uid).set({
+      email, displayName: name, active: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    e.target.reset();
+    alert(`User added: ${name}. Share the email and temporary password with them directly — this app has no "forgot password" flow yet, so make sure they can sign in before you close this out.`);
+  } catch (err) {
+    console.error(err);
+    alert('Could not add user: ' + err.message);
+  }
+});
 
 /* ---------------- Manage tab ---------------- */
 document.getElementById('addEquipmentForm').addEventListener('submit', async (e) => {
@@ -898,7 +1124,7 @@ async function refreshLabelGrid() {
   });
   if (!snap.docs.length) grid.innerHTML = '<div class="muted">Nothing to show yet — add some above.</div>';
 }
-if (firebaseReady) refreshLabelGrid();
+// refreshLabelGrid() is invoked from startApp() after login, not here.
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
