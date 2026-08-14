@@ -12,6 +12,10 @@
 <!-- QR code generator, used on the Manage tab to print labels -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
+<!-- PDF generation, used on the Audit tab to build the audit report -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/5.0.8/jspdf.plugin.autotable.min.js"></script>
+
 <style>
   :root{
     --navy:#0f2540; --navy-dark:#0a1a2e; --orange:#ff6a00; --orange-dark:#e05e00;
@@ -55,6 +59,12 @@
   .badge.checked_out{background:#fff4e5;color:#8a4b00;}
   .badge.in_repair{background:#eaf1fb;color:#1d4ed8;}
   .badge.lost{background:#fdeceb;color:#a52a20;}
+  .badge.flag-missing{background:#fdeceb;color:#a52a20;}
+  .badge.flag-unexpected{background:#fff4e5;color:#8a4b00;}
+  .badge.flag-recovered{background:#eaf1fb;color:#1d4ed8;}
+  #auditScanInput{width:100%;padding:16px;font-size:20px;border:2px solid var(--navy);border-radius:8px;text-align:center;margin-bottom:12px;}
+  #auditScanInput:focus{outline:3px solid var(--orange);outline-offset:1px;}
+  #auditProgress{font-weight:600;}
   .filter-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
   .filter-row input, .filter-row select{padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
 
@@ -101,6 +111,7 @@
 <nav>
   <button data-tab="scan" class="active">Scan</button>
   <button data-tab="history">History</button>
+  <button data-tab="audit">Audit</button>
   <button data-tab="manage">Manage / Labels</button>
 </nav>
 
@@ -141,6 +152,38 @@
       <table>
         <thead><tr><th>When</th><th>Action</th><th>Item</th><th>Associate</th></tr></thead>
         <tbody id="historyBody"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ================= AUDIT TAB ================= -->
+  <div class="tab" id="tab-audit">
+    <div class="card" id="auditIdle">
+      <h3 style="margin-top:0;">Inventory Audit</h3>
+      <p class="muted">Walk the floor and scan every item you physically find, regardless of what the system currently shows as its status. At the end you'll get a PDF report flagging anything missing, anything found that shouldn't be (still shown as checked out), and anything recovered that was marked lost.</p>
+      <button class="btn" id="startAuditBtn">Start New Audit</button>
+    </div>
+
+    <div class="card" id="auditActive" style="display:none;">
+      <div class="scan-state idle" id="auditScanState">Scan items as you find them</div>
+      <input id="auditScanInput" type="text" placeholder="Click here, then scan…" autocomplete="off">
+      <div class="muted" id="auditProgress" style="text-align:center;">0 of 0 found</div>
+      <div class="cancel-row" style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
+        <button class="btn" id="finishAuditBtn">Finish &amp; Generate Report</button>
+        <button class="btn secondary" id="cancelAuditBtn">Cancel Audit</button>
+      </div>
+    </div>
+
+    <div class="card" id="auditActiveList" style="display:none;">
+      <h3 style="margin-top:0;">Not Yet Scanned</h3>
+      <div class="device-list" id="auditRemainingList"></div>
+    </div>
+
+    <div class="card no-print">
+      <h3 style="margin-top:0;">Past Audits</h3>
+      <table>
+        <thead><tr><th>Date</th><th>Found</th><th>Missing</th><th>Flags</th><th></th></tr></thead>
+        <tbody id="auditHistoryBody"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -383,7 +426,7 @@ function renderDeviceList() {
   if (!rows.length) { list.innerHTML = '<div class="muted">No equipment added yet</div>'; return; }
   list.innerHTML = rows.map(e => {
     const meta = e.status === 'checked_out'
-      ? `With ${escapeHtml(e.assignedToName || 'unknown')}`
+      ? `${escapeHtml(e.id)} · With ${escapeHtml(e.assignedToName || 'unknown')}`
       : escapeHtml(e.id);
     return `
       <div class="device-row">
@@ -542,6 +585,248 @@ function renderHistory() {
     </tr>`).join('');
 }
 document.getElementById('historySearch').addEventListener('input', renderHistory);
+
+/* ---------------- Audit tab ---------------- */
+let auditSnapshot = null; // [{id, name, status, assignedToName}]
+let auditFound = {};      // id -> time string
+let auditUnknown = [];    // [{code, at}]
+
+const auditScanInput = document.getElementById('auditScanInput');
+const auditScanState = document.getElementById('auditScanState');
+
+document.getElementById('startAuditBtn').addEventListener('click', () => {
+  if (!firebaseReady) return alert('Configure Firebase first.');
+  if (!allEquipment.length) return alert('Add some equipment first.');
+  auditSnapshot = allEquipment.map(e => ({
+    id: e.id, name: e.name, status: e.status, assignedToName: e.assignedToName || null
+  }));
+  auditFound = {};
+  auditUnknown = [];
+  document.getElementById('auditIdle').style.display = 'none';
+  document.getElementById('auditActive').style.display = 'block';
+  document.getElementById('auditActiveList').style.display = 'block';
+  auditScanState.className = 'scan-state idle';
+  auditScanState.textContent = 'Scan items as you find them';
+  renderAuditProgress();
+  auditScanInput.focus();
+});
+
+auditScanInput.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const code = auditScanInput.value.trim();
+  auditScanInput.value = '';
+  if (!code || !auditSnapshot) return;
+  const item = auditSnapshot.find(i => i.id === code);
+  if (!item) {
+    auditUnknown.push({ code, at: new Date().toLocaleTimeString() });
+    auditScanState.className = 'scan-state error';
+    auditScanState.textContent = `Unrecognized code: ${code}`;
+  } else if (auditFound[code]) {
+    auditScanState.className = 'scan-state waiting';
+    auditScanState.textContent = `${item.name} was already scanned this audit`;
+  } else {
+    auditFound[code] = new Date().toLocaleTimeString();
+    auditScanState.className = 'scan-state success';
+    auditScanState.textContent = `✔ Found: ${item.name}`;
+  }
+  renderAuditProgress();
+});
+
+// keep focus on the audit scan input while the Audit tab is active and an audit is running
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('tab-audit').classList.contains('active')) return;
+  if (!auditSnapshot) return;
+  if (NO_REFOCUS_TAGS.includes(e.target.tagName)) return;
+  auditScanInput.focus();
+});
+
+function renderAuditProgress() {
+  const total = auditSnapshot.length;
+  const foundCount = Object.keys(auditFound).length;
+  document.getElementById('auditProgress').textContent =
+    `${foundCount} of ${total} found` + (auditUnknown.length ? ` · ${auditUnknown.length} unrecognized scan(s)` : '');
+  const remaining = auditSnapshot.filter(i => !auditFound[i.id]);
+  const list = document.getElementById('auditRemainingList');
+  if (!remaining.length) {
+    list.innerHTML = '<div class="muted">Everything has been scanned.</div>';
+  } else {
+    list.innerHTML = remaining.map(i => `
+      <div class="device-row">
+        <div class="device-icon">${statusIcon(i.status)}</div>
+        <div class="device-info">
+          <div class="dname">${escapeHtml(i.name || '')}</div>
+          <div class="dmeta">${escapeHtml(i.id)} · expected ${statusLabel(i.status)}</div>
+        </div>
+      </div>`).join('');
+  }
+}
+
+document.getElementById('cancelAuditBtn').addEventListener('click', () => {
+  if (!confirm('Cancel this audit? Nothing will be saved.')) return;
+  resetAuditUI();
+});
+
+function resetAuditUI() {
+  auditSnapshot = null; auditFound = {}; auditUnknown = [];
+  document.getElementById('auditIdle').style.display = 'block';
+  document.getElementById('auditActive').style.display = 'none';
+  document.getElementById('auditActiveList').style.display = 'none';
+}
+
+function auditFlag(expectedStatus, found) {
+  if (expectedStatus === 'lost') return found ? 'RECOVERED' : 'OK';
+  if (expectedStatus === 'checked_out') return found ? 'UNEXPECTED' : 'OK';
+  return found ? 'OK' : 'MISSING'; // available or in_repair
+}
+function flagLabel(flag) {
+  return {
+    MISSING: '❗ Missing',
+    UNEXPECTED: '⚠ Found unexpectedly (system says checked out)',
+    RECOVERED: '✅ Recovered (was marked Lost)',
+    OK: ''
+  }[flag] || '';
+}
+function flagBadgeClass(flag) {
+  return { MISSING: 'flag-missing', UNEXPECTED: 'flag-unexpected', RECOVERED: 'flag-recovered' }[flag] || '';
+}
+
+document.getElementById('finishAuditBtn').addEventListener('click', async () => {
+  if (!confirm('Finish this audit and generate the report?')) return;
+  const results = auditSnapshot.map(i => {
+    const found = !!auditFound[i.id];
+    return {
+      id: i.id, name: i.name, expectedStatus: i.status, assignedToName: i.assignedToName,
+      found, flag: auditFlag(i.status, found)
+    };
+  });
+  const summary = {
+    finishedAtLabel: new Date().toLocaleString(),
+    total: results.length,
+    foundCount: results.filter(r => r.found).length,
+    missingCount: results.filter(r => r.flag === 'MISSING').length,
+    unexpectedCount: results.filter(r => r.flag === 'UNEXPECTED').length,
+    recoveredCount: results.filter(r => r.flag === 'RECOVERED').length,
+    results,
+    unknownScans: auditUnknown
+  };
+  try {
+    await db.collection('audits').add({
+      finishedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      total: summary.total, foundCount: summary.foundCount, missingCount: summary.missingCount,
+      unexpectedCount: summary.unexpectedCount, recoveredCount: summary.recoveredCount,
+      results: summary.results, unknownScans: summary.unknownScans
+    });
+  } catch (err) {
+    console.error(err);
+    alert('Audit finished, but the record could not be saved: ' + err.message + '\nThe PDF will still be generated.');
+  }
+  generateAuditPDF(summary);
+  resetAuditUI();
+});
+
+function generateAuditPDF(summary) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  doc.setFontSize(16);
+  doc.text('Equipment Inventory Audit', 14, 18);
+  doc.setFontSize(10);
+  doc.text(`Completed: ${summary.finishedAtLabel}`, 14, 26);
+  doc.text(
+    `Total: ${summary.total}   Found: ${summary.foundCount}   Missing: ${summary.missingCount}   ` +
+    `Found Unexpectedly: ${summary.unexpectedCount}   Recovered: ${summary.recoveredCount}`,
+    14, 32
+  );
+
+  const flaggedRows = summary.results.filter(r => r.flag !== 'OK')
+    .map(r => [r.name, r.id, statusLabel(r.expectedStatus), r.found ? 'Yes' : 'No', flagLabel(r.flag)]);
+  doc.setFontSize(12);
+  doc.text('Items Needing Attention', 14, 40);
+  doc.autoTable({
+    startY: 44,
+    head: [['Item', 'Code', 'Expected Status', 'Found?', 'Flag']],
+    body: flaggedRows.length ? flaggedRows : [['—', '—', '—', '—', 'No discrepancies found']],
+    styles: { fontSize: 9 }
+  });
+
+  let y = doc.lastAutoTable.finalY + 12;
+  doc.setFontSize(12);
+  doc.text('Full Results', 14, y);
+  const allRows = summary.results.map(r =>
+    [r.name, r.id, statusLabel(r.expectedStatus), r.found ? 'Yes' : 'No', flagLabel(r.flag) || '—']
+  );
+  doc.autoTable({
+    startY: y + 4,
+    head: [['Item', 'Code', 'Expected Status', 'Found?', 'Flag']],
+    body: allRows,
+    styles: { fontSize: 8 }
+  });
+
+  if (summary.unknownScans && summary.unknownScans.length) {
+    let y2 = doc.lastAutoTable.finalY + 12;
+    doc.setFontSize(12);
+    doc.text('Unrecognized Scans', 14, y2);
+    doc.autoTable({
+      startY: y2 + 4,
+      head: [['Code Scanned', 'Time']],
+      body: summary.unknownScans.map(u => [u.code, u.at]),
+      styles: { fontSize: 8 }
+    });
+  }
+
+  const filename = `equipment-audit-${new Date().toISOString().slice(0, 10)}.pdf`;
+  doc.save(filename);
+
+  const subject = encodeURIComponent('Equipment Inventory Audit — ' + new Date().toLocaleDateString());
+  const body = encodeURIComponent(
+    `Audit completed ${summary.finishedAtLabel}.\n\n` +
+    `Total items: ${summary.total}\nFound: ${summary.foundCount}\nMissing: ${summary.missingCount}\n` +
+    `Found unexpectedly: ${summary.unexpectedCount}\nRecovered (previously lost): ${summary.recoveredCount}\n\n` +
+    `The full report just downloaded as "${filename}" on this computer — please attach it to this email before sending.`
+  );
+  if (confirm('The PDF has downloaded. Open your email client to send it now? (You will need to manually attach the downloaded file — browsers can\'t attach files automatically.)')) {
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  }
+}
+
+let allAudits = [];
+if (firebaseReady) {
+  db.collection('audits').orderBy('finishedAt', 'desc').limit(50).onSnapshot(snap => {
+    allAudits = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderAuditHistory();
+  });
+}
+
+function renderAuditHistory() {
+  const body = document.getElementById('auditHistoryBody');
+  if (!body) return;
+  if (!allAudits.length) { body.innerHTML = '<tr><td colspan="5" class="muted">No audits recorded yet</td></tr>'; return; }
+  body.innerHTML = allAudits.map(a => {
+    const flagCount = (a.missingCount || 0) + (a.unexpectedCount || 0) + (a.recoveredCount || 0);
+    const when = a.finishedAt && a.finishedAt.toDate ? a.finishedAt.toDate().toLocaleString() : '…';
+    return `<tr>
+      <td class="muted">${when}</td>
+      <td>${a.foundCount || 0} / ${a.total || 0}</td>
+      <td>${a.missingCount || 0}</td>
+      <td>${flagCount}</td>
+      <td><button class="btn secondary small download-audit-btn" data-id="${a.id}">Download PDF</button></td>
+    </tr>`;
+  }).join('');
+  body.querySelectorAll('.download-audit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const record = allAudits.find(a => a.id === btn.dataset.id);
+      if (record) {
+        generateAuditPDF({
+          finishedAtLabel: record.finishedAt && record.finishedAt.toDate ? record.finishedAt.toDate().toLocaleString() : '',
+          total: record.total, foundCount: record.foundCount, missingCount: record.missingCount,
+          unexpectedCount: record.unexpectedCount, recoveredCount: record.recoveredCount,
+          results: record.results || [], unknownScans: record.unknownScans || []
+        });
+      }
+    });
+  });
+}
 
 /* ---------------- Manage tab ---------------- */
 document.getElementById('addEquipmentForm').addEventListener('submit', async (e) => {
