@@ -25,7 +25,9 @@
   nav{display:flex;background:var(--navy-dark);}
   nav button{flex:1;padding:12px;background:none;border:none;color:#c9d4e0;font-size:14px;cursor:pointer;border-bottom:3px solid transparent;}
   nav button.active{color:#fff;border-bottom-color:var(--orange);font-weight:600;}
-  main{max-width:900px;margin:0 auto;padding:20px;}
+  main{max-width:1100px;margin:0 auto;padding:20px;}
+  .scan-layout{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;align-items:start;}
+  @media (max-width:800px){.scan-layout{grid-template-columns:1fr;}}
   .tab{display:none;}
   .tab.active{display:block;}
   .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:16px;}
@@ -48,11 +50,27 @@
   table{width:100%;border-collapse:collapse;font-size:14px;}
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);}
   th{background:#f0f3f7;font-weight:600;color:#3c4a5a;}
-  .badge{padding:3px 8px;border-radius:999px;font-size:12px;font-weight:600;}
+  .badge{padding:3px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;}
   .badge.available{background:#e9f9ee;color:#146c34;}
   .badge.checked_out{background:#fff4e5;color:#8a4b00;}
+  .badge.in_repair{background:#eaf1fb;color:#1d4ed8;}
+  .badge.lost{background:#fdeceb;color:#a52a20;}
   .filter-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
   .filter-row input, .filter-row select{padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
+
+  /* Device status panel */
+  .device-panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .device-panel-header h3{margin:0;}
+  #deviceSearch{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-bottom:10px;}
+  .device-list{max-height:560px;overflow-y:auto;}
+  .device-row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border);}
+  .device-row:last-child{border-bottom:none;}
+  .device-icon{font-size:20px;width:26px;text-align:center;flex-shrink:0;}
+  .device-info{flex:1;min-width:0;}
+  .device-info .dname{font-weight:600;font-size:14px;line-height:1.3;}
+  .device-info .dmeta{font-size:12px;color:#777;line-height:1.3;}
+  .device-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;}
+  .device-actions select{font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;max-width:130px;}
 
   /* Manage tab */
   form.inline{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;}
@@ -83,7 +101,6 @@
 
 <nav>
   <button data-tab="scan" class="active">Scan</button>
-  <button data-tab="status">Status</button>
   <button data-tab="history">History</button>
   <button data-tab="manage">Manage / Labels</button>
 </nav>
@@ -92,36 +109,28 @@
 
   <!-- ================= SCAN TAB ================= -->
   <div class="tab active" id="tab-scan">
-    <div class="card">
-      <div class="scan-state idle" id="scanState">Scan an equipment barcode to begin</div>
-      <div class="pending-item" id="pendingLine"></div>
-      <input id="scanInput" type="text" placeholder="Click here, then scan…" autocomplete="off" autofocus>
-      <div class="cancel-row">
-        <button class="btn secondary small" id="cancelBtn" style="display:none;">Cancel pending scan</button>
+    <div class="scan-layout">
+      <div>
+        <div class="card">
+          <div class="scan-state idle" id="scanState">Scan an equipment barcode to begin</div>
+          <div class="pending-item" id="pendingLine"></div>
+          <input id="scanInput" type="text" placeholder="Click here, then scan…" autocomplete="off" autofocus>
+          <div class="cancel-row">
+            <button class="btn secondary small" id="cancelBtn" style="display:none;">Cancel pending scan</button>
+          </div>
+        </div>
+        <div class="card muted">
+          Flow: scan an <b>available</b> item → scan an <b>associate</b> badge to check it out.<br>
+          Scan a <b>checked-out</b> item by itself to check it back in.<br>
+          Items marked <b>In Repair</b> or <b>Lost</b> can't be checked out until their status is reset on the right.<br>
+          This box stays focused for a USB/Bluetooth scanner (acts like a keyboard + Enter).
+        </div>
       </div>
-    </div>
-    <div class="card muted">
-      Flow: scan an <b>available</b> item → scan an <b>associate</b> badge to check it out.<br>
-      Scan a <b>checked-out</b> item by itself to check it back in.<br>
-      This box stays focused for a USB/Bluetooth scanner (acts like a keyboard + Enter).
-    </div>
-  </div>
-
-  <!-- ================= STATUS TAB ================= -->
-  <div class="tab" id="tab-status">
-    <div class="card">
-      <div class="filter-row">
-        <input id="statusSearch" placeholder="Search item or associate…">
-        <select id="statusFilter">
-          <option value="all">All</option>
-          <option value="checked_out">Checked out only</option>
-          <option value="available">Available only</option>
-        </select>
+      <div class="card">
+        <div class="device-panel-header"><h3>Device Status</h3></div>
+        <input id="deviceSearch" placeholder="Search devices…">
+        <div class="device-list" id="deviceList"><div class="muted">Loading…</div></div>
       </div>
-      <table>
-        <thead><tr><th>Item</th><th>Code</th><th>Status</th><th>Assigned To</th><th>Since</th></tr></thead>
-        <tbody id="statusBody"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
-      </table>
     </div>
   </div>
 
@@ -156,6 +165,13 @@
         <label>Name<input required id="assocName" placeholder="e.g. Jordan Smith"></label>
         <button class="btn" type="submit">Add Associate</button>
       </form>
+    </div>
+    <div class="card no-print">
+      <h3 style="margin-top:0;">Current Associates</h3>
+      <table>
+        <thead><tr><th>Name</th><th>Badge Code</th><th></th></tr></thead>
+        <tbody id="manageAssociateBody"><tr><td colspan="3" class="muted">Loading…</td></tr></tbody>
+      </table>
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Current Equipment</h3>
@@ -282,6 +298,10 @@ async function handleScan(code) {
         return;
       }
       const eq = eqSnap.data();
+      if (eq.status === 'in_repair' || eq.status === 'lost') {
+        setState('error', `${eq.name} is marked ${statusLabel(eq.status)} and can't be checked out. Reset its status in the Device Status panel first.`);
+        return;
+      }
       if (eq.status === 'checked_out') {
         // check-in
         await db.collection('equipment').doc(code).update({
@@ -339,14 +359,81 @@ async function handleScan(code) {
   }
 }
 
-/* ---------------- Status tab ---------------- */
+/* ---------------- Status helpers ---------------- */
+function statusLabel(status) {
+  return { available: 'Available', checked_out: 'Checked Out', in_repair: 'In Repair', lost: 'Lost' }[status] || status;
+}
+function statusIcon(status) {
+  return { available: '🟢', checked_out: '📦', in_repair: '🔧', lost: '❓' }[status] || '⬜';
+}
+
+/* ---------------- Device Status panel (Scan tab) ---------------- */
 let allEquipment = [];
 if (firebaseReady) {
   db.collection('equipment').onSnapshot(snap => {
     allEquipment = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderStatus();
+    renderDeviceList();
     renderManageEquipmentList();
   });
+}
+
+function renderDeviceList() {
+  const list = document.getElementById('deviceList');
+  if (!list) return;
+  const q = (document.getElementById('deviceSearch').value || '').toLowerCase();
+  const rows = [...allEquipment]
+    .filter(e => (e.name + ' ' + e.id + ' ' + (e.assignedToName || '')).toLowerCase().includes(q))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (!rows.length) { list.innerHTML = '<div class="muted">No matching devices</div>'; return; }
+  const ALL_STATUSES = ['available', 'in_repair', 'lost'];
+  list.innerHTML = rows.map(e => {
+    const meta = e.status === 'checked_out'
+      ? `With ${escapeHtml(e.assignedToName || 'unknown')}`
+      : escapeHtml(e.id);
+    const options = ALL_STATUSES.filter(s => s !== e.status)
+      .map(s => `<option value="${s}">Mark ${statusLabel(s)}</option>`).join('');
+    return `
+      <div class="device-row">
+        <div class="device-icon">${statusIcon(e.status)}</div>
+        <div class="device-info">
+          <div class="dname">${escapeHtml(e.name || '')}</div>
+          <div class="dmeta">${meta}</div>
+        </div>
+        <div class="device-actions">
+          <span class="badge ${e.status}">${statusLabel(e.status)}</span>
+          <select class="dev-status-select" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}" data-status="${e.status}">
+            <option value="" selected disabled>Set status…</option>
+            ${options}
+          </select>
+        </div>
+      </div>`;
+  }).join('');
+  list.querySelectorAll('.dev-status-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      setEquipmentStatus(sel.dataset.id, sel.dataset.name, sel.dataset.status, sel.value);
+    });
+  });
+}
+document.getElementById('deviceSearch').addEventListener('input', renderDeviceList);
+
+async function setEquipmentStatus(id, name, oldStatus, newStatus) {
+  if (!newStatus || newStatus === oldStatus) return;
+  if (!confirm(`Mark "${name}" as ${statusLabel(newStatus)}?`)) { renderDeviceList(); return; }
+  try {
+    const update = { status: newStatus };
+    if (newStatus !== 'checked_out') {
+      update.assignedTo = null; update.assignedToName = null; update.assignedAt = null;
+    }
+    await db.collection('equipment').doc(id).update(update);
+    await db.collection('logs').add({
+      action: 'status_change', equipmentId: id, equipmentName: name,
+      note: `${statusLabel(oldStatus)} → ${statusLabel(newStatus)}`,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch (err) {
+    console.error(err);
+    alert('Could not update status: ' + err.message);
+  }
 }
 
 /* ---------------- Manage tab: current equipment / remove ---------------- */
@@ -362,7 +449,7 @@ function renderManageEquipmentList() {
     <tr>
       <td>${escapeHtml(e.name || '')}</td>
       <td class="muted">${escapeHtml(e.id)}</td>
-      <td><span class="badge ${e.status}">${e.status === 'checked_out' ? 'Checked out' : 'Available'}</span></td>
+      <td><span class="badge ${e.status}">${statusLabel(e.status)}</span></td>
       <td><button class="btn secondary small remove-eq-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}" data-status="${e.status}">Remove</button></td>
     </tr>`).join('');
   body.querySelectorAll('.remove-eq-btn').forEach(btn => {
@@ -384,27 +471,48 @@ async function removeEquipment(id, name, status) {
   }
 }
 
-function renderStatus() {
-  const q = (document.getElementById('statusSearch').value || '').toLowerCase();
-  const filter = document.getElementById('statusFilter').value;
-  const body = document.getElementById('statusBody');
-  let rows = allEquipment.filter(e => {
-    if (filter !== 'all' && e.status !== filter) return false;
-    const hay = (e.name + ' ' + e.id + ' ' + (e.assignedToName || '')).toLowerCase();
-    return hay.includes(q);
-  }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="muted">No matching equipment</td></tr>'; return; }
-  body.innerHTML = rows.map(e => `
-    <tr>
-      <td>${escapeHtml(e.name || '')}</td>
-      <td class="muted">${escapeHtml(e.id)}</td>
-      <td><span class="badge ${e.status}">${e.status === 'checked_out' ? 'Checked out' : 'Available'}</span></td>
-      <td>${escapeHtml(e.assignedToName || '—')}</td>
-      <td class="muted">${e.assignedAt && e.assignedAt.toDate ? e.assignedAt.toDate().toLocaleString() : '—'}</td>
-    </tr>`).join('');
+/* ---------------- Manage tab: current associates / remove ---------------- */
+let allAssociates = [];
+if (firebaseReady) {
+  db.collection('associates').onSnapshot(snap => {
+    allAssociates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderManageAssociateList();
+  });
 }
-document.getElementById('statusSearch').addEventListener('input', renderStatus);
-document.getElementById('statusFilter').addEventListener('change', renderStatus);
+
+function renderManageAssociateList() {
+  const body = document.getElementById('manageAssociateBody');
+  if (!body) return;
+  if (!allAssociates.length) {
+    body.innerHTML = '<tr><td colspan="3" class="muted">No associates added yet</td></tr>';
+    return;
+  }
+  const rows = [...allAssociates].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  body.innerHTML = rows.map(a => `
+    <tr>
+      <td>${escapeHtml(a.name || '')}</td>
+      <td class="muted">${escapeHtml(a.id)}</td>
+      <td><button class="btn secondary small remove-assoc-btn" data-id="${escapeHtml(a.id)}" data-name="${escapeHtml(a.name || '')}">Remove</button></td>
+    </tr>`).join('');
+  body.querySelectorAll('.remove-assoc-btn').forEach(btn => {
+    btn.addEventListener('click', () => removeAssociate(btn.dataset.id, btn.dataset.name));
+  });
+}
+
+async function removeAssociate(id, name) {
+  const hasItem = allEquipment.find(e => e.status === 'checked_out' && e.assignedTo === id);
+  if (hasItem) {
+    alert(`${name} currently has "${hasItem.name}" checked out. Scan it back in before removing this associate.`);
+    return;
+  }
+  if (!confirm(`Remove "${name}" (${id}) from the system? This can't be undone. Their scan history in the History tab will be kept.`)) return;
+  try {
+    await db.collection('associates').doc(id).delete();
+  } catch (err) {
+    console.error(err);
+    alert('Could not remove associate: ' + err.message);
+  }
+}
 
 /* ---------------- History tab ---------------- */
 let allLogs = [];
@@ -422,10 +530,16 @@ function renderHistory() {
     return hay.includes(q);
   });
   if (!rows.length) { body.innerHTML = '<tr><td colspan="4" class="muted">No history yet</td></tr>'; return; }
+  const actionLabel = (l) => {
+    if (l.action === 'check_out') return '📤 Check-out';
+    if (l.action === 'check_in') return '📥 Check-in';
+    if (l.action === 'status_change') return `🔄 ${escapeHtml(l.note || 'Status change')}`;
+    return escapeHtml(l.action || '');
+  };
   body.innerHTML = rows.map(l => `
     <tr>
       <td class="muted">${l.timestamp && l.timestamp.toDate ? l.timestamp.toDate().toLocaleString() : '…'}</td>
-      <td>${l.action === 'check_out' ? '📤 Check-out' : '📥 Check-in'}</td>
+      <td>${actionLabel(l)}</td>
       <td>${escapeHtml(l.equipmentName || '')}</td>
       <td>${escapeHtml(l.associateName || '—')}</td>
     </tr>`).join('');
