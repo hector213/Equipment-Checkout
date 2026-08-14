@@ -687,6 +687,16 @@ function flagLabel(flag) {
     OK: ''
   }[flag] || '';
 }
+// Plain-text version for PDFs — jsPDF's built-in fonts can't render emoji,
+// so using flagLabel() there prints garbled characters instead of the icon.
+function flagLabelPlain(flag) {
+  return {
+    MISSING: 'Missing',
+    UNEXPECTED: 'Found unexpectedly (system says checked out)',
+    RECOVERED: 'Recovered (was marked Lost)',
+    OK: ''
+  }[flag] || '';
+}
 function flagBadgeClass(flag) {
   return { MISSING: 'flag-missing', UNEXPECTED: 'flag-unexpected', RECOVERED: 'flag-recovered' }[flag] || '';
 }
@@ -740,26 +750,25 @@ function generateAuditPDF(summary) {
   );
 
   const flaggedRows = summary.results.filter(r => r.flag !== 'OK')
-    .map(r => [r.name, r.id, statusLabel(r.expectedStatus), r.found ? 'Yes' : 'No', flagLabel(r.flag)]);
+    .map(r => [r.name, r.id, statusLabel(r.expectedStatus), r.found ? 'Yes' : 'No', flagLabelPlain(r.flag)]);
   doc.setFontSize(12);
   doc.text('Items Needing Attention', 14, 40);
   doc.autoTable({
     startY: 44,
     head: [['Item', 'Code', 'Expected Status', 'Found?', 'Flag']],
-    body: flaggedRows.length ? flaggedRows : [['—', '—', '—', '—', 'No discrepancies found']],
+    body: flaggedRows.length ? flaggedRows : [['-', '-', '-', '-', 'No discrepancies found']],
     styles: { fontSize: 9 }
   });
 
   let y = doc.lastAutoTable.finalY + 12;
   doc.setFontSize(12);
-  doc.text('Full Results', 14, y);
-  const allRows = summary.results.map(r =>
-    [r.name, r.id, statusLabel(r.expectedStatus), r.found ? 'Yes' : 'No', flagLabel(r.flag) || '—']
-  );
+  doc.text('All Other Items (No Discrepancy)', 14, y);
+  const okRows = summary.results.filter(r => r.flag === 'OK')
+    .map(r => [r.name, r.id, statusLabel(r.expectedStatus), r.found ? 'Yes' : 'No']);
   doc.autoTable({
     startY: y + 4,
-    head: [['Item', 'Code', 'Expected Status', 'Found?', 'Flag']],
-    body: allRows,
+    head: [['Item', 'Code', 'Expected Status', 'Found?']],
+    body: okRows.length ? okRows : [['-', '-', '-', '-']],
     styles: { fontSize: 8 }
   });
 
@@ -777,17 +786,6 @@ function generateAuditPDF(summary) {
 
   const filename = `equipment-audit-${new Date().toISOString().slice(0, 10)}.pdf`;
   doc.save(filename);
-
-  const subject = encodeURIComponent('Equipment Inventory Audit — ' + new Date().toLocaleDateString());
-  const body = encodeURIComponent(
-    `Audit completed ${summary.finishedAtLabel}.\n\n` +
-    `Total items: ${summary.total}\nFound: ${summary.foundCount}\nMissing: ${summary.missingCount}\n` +
-    `Found unexpectedly: ${summary.unexpectedCount}\nRecovered (previously lost): ${summary.recoveredCount}\n\n` +
-    `The full report just downloaded as "${filename}" on this computer — please attach it to this email before sending.`
-  );
-  if (confirm('The PDF has downloaded. Open your email client to send it now? (You will need to manually attach the downloaded file — browsers can\'t attach files automatically.)')) {
-    window.location.href = `mailto:?subject=${subject}&body=${body}`;
-  }
 }
 
 let allAudits = [];
