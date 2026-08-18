@@ -632,9 +632,12 @@ function renderDeviceList() {
   const rows = [...allEquipment].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   if (!rows.length) { list.innerHTML = '<div class="muted">No equipment added yet</div>'; return; }
   list.innerHTML = rows.map(e => {
-    const meta = e.status === 'checked_out'
-      ? `${escapeHtml(e.id)} · With ${escapeHtml(e.assignedToName || 'unknown')}`
-      : escapeHtml(e.id);
+    let meta = escapeHtml(e.id);
+    if (e.status === 'checked_out') {
+      meta = `${escapeHtml(e.id)} · With ${escapeHtml(e.assignedToName || 'unknown')}`;
+    } else if ((e.status === 'in_repair' || e.status === 'lost') && e.ticketNumber) {
+      meta = `${escapeHtml(e.id)} · Ticket #${escapeHtml(e.ticketNumber)}`;
+    }
     return `
       <div class="device-row">
         <div class="device-top">
