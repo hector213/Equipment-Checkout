@@ -85,6 +85,7 @@
   form.inline{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;}
   form.inline label{display:flex;flex-direction:column;font-size:12px;color:#555;gap:4px;}
   form.inline input, form.inline select{padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
+  .bulk-textarea{width:100%;min-height:110px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;box-sizing:border-box;margin-bottom:10px;}
   .label-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px;}
   .label-card{border:1px dashed #aaa;border-radius:6px;padding:10px;text-align:center;display:flex;flex-direction:column;align-items:center;}
   .label-card .qr{margin:0 auto 6px;display:flex;justify-content:center;}
@@ -244,6 +245,13 @@
         <label>Shift<input id="assocShift" placeholder="e.g. A1, A2, B1 (optional)"></label>
         <button class="btn" type="submit">Add Associate</button>
       </form>
+    </div>
+    <div class="card no-print">
+      <h3 style="margin-top:0;">Bulk Import Associates</h3>
+      <p class="muted">Paste one associate per line as <code>Name, Shift</code> (shift is optional — you can also just put a name by itself). Badge codes are assigned automatically, so this is safe to use even with a big list.</p>
+      <textarea class="bulk-textarea" id="bulkAssocInput" placeholder="Jordan Smith, A1&#10;Casey Lee, B1&#10;Alex Rivera"></textarea>
+      <button class="btn" id="bulkImportAssocBtn" type="button">Import List</button>
+      <div class="muted" id="bulkImportAssocResult" style="margin-top:8px;"></div>
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Current Associates</h3>
@@ -1168,6 +1176,11 @@ document.getElementById('addEquipmentForm').addEventListener('submit', async (e)
   const category = document.getElementById('eqCategory').value.trim();
   if (!code || !name) return;
   try {
+    const existing = await db.collection('equipment').doc(code).get();
+    if (existing.exists) {
+      alert(`That code (${code}) is already used by "${existing.data().name}". Pick a different code, or remove that item first if it's no longer needed.`);
+      return;
+    }
     await db.collection('equipment').doc(code).set({
       name, category: category || null, status: 'available',
       assignedTo: null, assignedToName: null, assignedAt: null
@@ -1189,6 +1202,11 @@ document.getElementById('addAssociateForm').addEventListener('submit', async (e)
   const shift = document.getElementById('assocShift').value.trim();
   if (!code || !name) return;
   try {
+    const existing = await db.collection('associates').doc(code).get();
+    if (existing.exists) {
+      alert(`That badge code (${code}) is already used by "${existing.data().name}". Pick a different code, or remove that associate first if they're no longer with us.`);
+      return;
+    }
     await db.collection('associates').doc(code).set({ name, active: true, shift: shift || null });
     e.target.reset();
     refreshLabelGrid();
@@ -1196,6 +1214,74 @@ document.getElementById('addAssociateForm').addEventListener('submit', async (e)
   } catch (err) {
     console.error(err);
     alert('Could not add associate: ' + err.message);
+  }
+});
+
+/* ---------------- Bulk import associates ---------------- */
+function nextAutoAssocCode(usedCodes) {
+  let n = 1;
+  // Find the highest existing ASSOC-#### code so new ones don't collide or restart at 1 every time.
+  usedCodes.forEach(id => {
+    const m = /^ASSOC-(\d+)$/i.exec(id || '');
+    if (m) n = Math.max(n, parseInt(m[1], 10) + 1);
+  });
+  let code = `ASSOC-${String(n).padStart(4, '0')}`;
+  while (usedCodes.has(code)) {
+    n++;
+    code = `ASSOC-${String(n).padStart(4, '0')}`;
+  }
+  return code;
+}
+
+document.getElementById('bulkImportAssocBtn').addEventListener('click', async () => {
+  if (!firebaseReady) return alert('Configure Firebase first.');
+  const raw = document.getElementById('bulkAssocInput').value;
+  const resultEl = document.getElementById('bulkImportAssocResult');
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) { resultEl.textContent = 'Paste at least one name first.'; return; }
+
+  const usedCodes = new Set(allAssociates.map(a => a.id));
+  const existingNames = new Map(allAssociates.map(a => [(a.name || '').trim().toLowerCase(), a]));
+  const toAdd = [];
+  const skipped = [];
+
+  lines.forEach(line => {
+    const parts = line.split(',').map(p => p.trim());
+    const name = parts[0];
+    const shift = parts[1] || '';
+    if (!name) return;
+    if (existingNames.has(name.toLowerCase())) {
+      skipped.push(`${name} (already exists as ${existingNames.get(name.toLowerCase()).id})`);
+      return;
+    }
+    const code = nextAutoAssocCode(usedCodes);
+    usedCodes.add(code); // reserve it so the next line in this same batch doesn't reuse it
+    toAdd.push({ code, name, shift });
+  });
+
+  if (!toAdd.length) {
+    resultEl.textContent = skipped.length
+      ? `Nothing new to add — all ${skipped.length} name(s) already exist: ${skipped.join(', ')}`
+      : 'Nothing new to add.';
+    return;
+  }
+
+  if (!confirm(`Import ${toAdd.length} associate(s)${skipped.length ? `, skipping ${skipped.length} that already exist` : ''}?`)) return;
+
+  try {
+    const batch = db.batch();
+    toAdd.forEach(({ code, name, shift }) => {
+      batch.set(db.collection('associates').doc(code), { name, active: true, shift: shift || null });
+    });
+    await batch.commit();
+    document.getElementById('bulkAssocInput').value = '';
+    let msg = `Added ${toAdd.length} associate(s): ${toAdd.map(a => `${a.name} (${a.code})`).join(', ')}.`;
+    if (skipped.length) msg += ` Skipped ${skipped.length} already-existing name(s): ${skipped.join(', ')}.`;
+    resultEl.textContent = msg;
+    refreshLabelGrid();
+  } catch (err) {
+    console.error(err);
+    resultEl.textContent = 'Import failed: ' + err.message;
   }
 });
 
