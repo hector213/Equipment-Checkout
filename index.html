@@ -663,6 +663,11 @@ async function setEquipmentStatus(id, name, oldStatus, newStatus) {
     if (newStatus !== 'checked_out') {
       update.assignedTo = null; update.assignedToName = null; update.assignedAt = null;
     }
+    if (newStatus === 'in_repair' || newStatus === 'lost') {
+      update.ticketNumber = ticketNumber || null;
+    } else {
+      update.ticketNumber = null;
+    }
     await db.collection('equipment').doc(id).update(update);
     await db.collection('logs').add({
       action: 'status_change', equipmentId: id, equipmentName: name,
@@ -695,7 +700,7 @@ function renderManageEquipmentList() {
     <tr>
       <td>${escapeHtml(e.name || '')}</td>
       <td class="muted">${escapeHtml(e.id)}</td>
-      <td><span class="badge ${e.status}">${statusLabel(e.status)}</span></td>
+      <td><span class="badge ${e.status}">${statusLabel(e.status)}</span>${e.ticketNumber ? ` <span class="muted">Ticket #${escapeHtml(e.ticketNumber)}</span>` : ''}</td>
       <td>
         <select class="dev-status-select" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}" data-status="${e.status}">
           <option value="" selected disabled>Set status…</option>
