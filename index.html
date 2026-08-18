@@ -652,6 +652,12 @@ function renderDeviceList() {
 async function setEquipmentStatus(id, name, oldStatus, newStatus) {
   if (!newStatus || newStatus === oldStatus) return;
   if (!confirm(`Mark "${name}" as ${statusLabel(newStatus)}?`)) { renderManageEquipmentList(); return; }
+  let ticketNumber = '';
+  if (newStatus === 'in_repair' || newStatus === 'lost') {
+    ticketNumber = prompt(`Optional ticket number for this ${statusLabel(newStatus)} record (leave blank if none):`, '') || '';
+    ticketNumber = ticketNumber.trim();
+  }
+  const changedByName = (currentUser && currentUser.displayName) || 'Unknown';
   try {
     const update = { status: newStatus };
     if (newStatus !== 'checked_out') {
@@ -661,6 +667,9 @@ async function setEquipmentStatus(id, name, oldStatus, newStatus) {
     await db.collection('logs').add({
       action: 'status_change', equipmentId: id, equipmentName: name,
       note: `${statusLabel(oldStatus)} → ${statusLabel(newStatus)}`,
+      changedBy: (currentUser && currentUser.uid) || null,
+      changedByName,
+      ticketNumber: ticketNumber || null,
       timestamp: firebase.firestore.FieldValue.serverTimestamp()
     });
   } catch (err) {
@@ -778,22 +787,31 @@ function renderHistory() {
   const q = (document.getElementById('historySearch').value || '').toLowerCase();
   const body = document.getElementById('historyBody');
   let rows = allLogs.filter(l => {
-    const hay = ((l.equipmentName || '') + ' ' + (l.associateName || '')).toLowerCase();
+    const hay = ((l.equipmentName || '') + ' ' + (l.associateName || '') + ' ' + (l.changedByName || '') + ' ' + (l.ticketNumber || '')).toLowerCase();
     return hay.includes(q);
   });
   if (!rows.length) { body.innerHTML = '<tr><td colspan="4" class="muted">No history yet</td></tr>'; return; }
   const actionLabel = (l) => {
     if (l.action === 'check_out') return '📤 Check-out';
     if (l.action === 'check_in') return '📥 Check-in';
-    if (l.action === 'status_change') return `🔄 ${escapeHtml(l.note || 'Status change')}`;
+    if (l.action === 'status_change') {
+      const ticket = l.ticketNumber ? ` <span class="muted">(Ticket #${escapeHtml(l.ticketNumber)})</span>` : '';
+      return `🔄 ${escapeHtml(l.note || 'Status change')}${ticket}`;
+    }
     return escapeHtml(l.action || '');
+  };
+  const associateCell = (l) => {
+    if (l.action === 'status_change') {
+      return l.changedByName ? `${escapeHtml(l.changedByName)} <span class="muted">(changed by)</span>` : '—';
+    }
+    return escapeHtml(l.associateName || '—');
   };
   body.innerHTML = rows.map(l => `
     <tr>
       <td class="muted">${l.timestamp && l.timestamp.toDate ? l.timestamp.toDate().toLocaleString() : '…'}</td>
       <td>${actionLabel(l)}</td>
       <td>${escapeHtml(l.equipmentName || '')}</td>
-      <td>${escapeHtml(l.associateName || '—')}</td>
+      <td>${associateCell(l)}</td>
     </tr>`).join('');
 }
 document.getElementById('historySearch').addEventListener('input', renderHistory);
