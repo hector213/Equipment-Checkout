@@ -241,14 +241,15 @@
       <form class="inline" id="addAssociateForm">
         <label>Badge Code<input required id="assocCode" placeholder="scan or type code"></label>
         <label>Name<input required id="assocName" placeholder="e.g. Jordan Smith"></label>
+        <label>Shift<input id="assocShift" placeholder="e.g. A1, A2, B1 (optional)"></label>
         <button class="btn" type="submit">Add Associate</button>
       </form>
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Current Associates</h3>
       <table>
-        <thead><tr><th>Name</th><th>Badge Code</th><th></th></tr></thead>
-        <tbody id="manageAssociateBody"><tr><td colspan="3" class="muted">Loading…</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Badge Code</th><th>Shift</th><th></th></tr></thead>
+        <tbody id="manageAssociateBody"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="card no-print">
@@ -260,11 +261,16 @@
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Print Labels</h3>
-      <select class="type-select" id="labelTypeSelect">
-        <option value="equipment">Equipment labels</option>
-        <option value="associates">Associate badge labels</option>
-      </select>
-      <button class="btn secondary" id="printLabelsBtn">🖨️ Print This Set</button>
+      <div class="inline no-print" style="margin-bottom:10px;">
+        <select class="type-select" id="labelTypeSelect">
+          <option value="equipment">Equipment labels</option>
+          <option value="associates">Associate badge labels</option>
+        </select>
+        <label>Search<input id="labelSearchInput" placeholder="search by name or code"></label>
+        <label id="labelShiftWrap" style="display:none;">Shift<select id="labelShiftSelect"><option value="">All shifts</option></select></label>
+        <button class="btn secondary" id="printLabelsBtn">🖨️ Print This Set</button>
+      </div>
+      <p class="muted no-print" id="labelCountNote"></p>
     </div>
     <div class="label-grid" id="labelGrid"></div>
   </div>
@@ -616,6 +622,7 @@ function initEquipmentListener() {
     allEquipment = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderDeviceList();
     renderManageEquipmentList();
+    refreshLabelGrid();
   });
 }
 
@@ -719,6 +726,8 @@ function initAssociatesListener() {
   db.collection('associates').onSnapshot(snap => {
     allAssociates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderManageAssociateList();
+    updateLabelShiftOptions();
+    refreshLabelGrid();
   });
 }
 
@@ -726,7 +735,7 @@ function renderManageAssociateList() {
   const body = document.getElementById('manageAssociateBody');
   if (!body) return;
   if (!allAssociates.length) {
-    body.innerHTML = '<tr><td colspan="3" class="muted">No associates added yet</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" class="muted">No associates added yet</td></tr>';
     return;
   }
   const rows = [...allAssociates].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -734,6 +743,7 @@ function renderManageAssociateList() {
     <tr>
       <td>${escapeHtml(a.name || '')}</td>
       <td class="muted">${escapeHtml(a.id)}</td>
+      <td>${escapeHtml(a.shift || '')}</td>
       <td><button class="btn secondary small remove-assoc-btn" data-id="${escapeHtml(a.id)}" data-name="${escapeHtml(a.name || '')}">Remove</button></td>
     </tr>`).join('');
   body.querySelectorAll('.remove-assoc-btn').forEach(btn => {
@@ -1150,9 +1160,10 @@ document.getElementById('addAssociateForm').addEventListener('submit', async (e)
   if (!firebaseReady) return alert('Configure Firebase first.');
   const code = document.getElementById('assocCode').value.trim();
   const name = document.getElementById('assocName').value.trim();
+  const shift = document.getElementById('assocShift').value.trim();
   if (!code || !name) return;
   try {
-    await db.collection('associates').doc(code).set({ name, active: true });
+    await db.collection('associates').doc(code).set({ name, active: true, shift: shift || null });
     e.target.reset();
     refreshLabelGrid();
     alert('Associate added: ' + name);
@@ -1162,17 +1173,50 @@ document.getElementById('addAssociateForm').addEventListener('submit', async (e)
   }
 });
 
-document.getElementById('labelTypeSelect').addEventListener('change', refreshLabelGrid);
+document.getElementById('labelTypeSelect').addEventListener('change', () => { updateLabelShiftOptions(); refreshLabelGrid(); });
+document.getElementById('labelSearchInput').addEventListener('input', refreshLabelGrid);
+document.getElementById('labelShiftSelect').addEventListener('change', refreshLabelGrid);
 document.getElementById('printLabelsBtn').addEventListener('click', () => window.print());
 
-async function refreshLabelGrid() {
+function updateLabelShiftOptions() {
+  const type = document.getElementById('labelTypeSelect').value;
+  const wrap = document.getElementById('labelShiftWrap');
+  const shiftSelect = document.getElementById('labelShiftSelect');
+  if (type !== 'associates') {
+    wrap.style.display = 'none';
+    shiftSelect.value = '';
+    return;
+  }
+  wrap.style.display = '';
+  const shifts = Array.from(new Set(allAssociates.map(a => (a.shift || '').trim()).filter(Boolean))).sort();
+  const current = shiftSelect.value;
+  shiftSelect.innerHTML = '<option value="">All shifts</option>' +
+    shifts.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+  if (shifts.includes(current)) shiftSelect.value = current;
+}
+
+function refreshLabelGrid() {
   if (!firebaseReady) return;
   const type = document.getElementById('labelTypeSelect').value;
   const grid = document.getElementById('labelGrid');
+  const countNote = document.getElementById('labelCountNote');
   grid.innerHTML = '';
-  const snap = await db.collection(type === 'equipment' ? 'equipment' : 'associates').get();
-  snap.docs.forEach(d => {
-    const data = d.data();
+  const search = document.getElementById('labelSearchInput').value.trim().toLowerCase();
+  const shiftFilter = document.getElementById('labelShiftSelect').value;
+
+  let items = (type === 'equipment' ? allEquipment : allAssociates).slice();
+  if (search) {
+    items = items.filter(item =>
+      (item.name || '').toLowerCase().includes(search) ||
+      (item.id || '').toLowerCase().includes(search)
+    );
+  }
+  if (type === 'associates' && shiftFilter) {
+    items = items.filter(item => (item.shift || '') === shiftFilter);
+  }
+  items = items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  items.forEach(data => {
     const card = document.createElement('div');
     card.className = 'label-card';
     const qrHolder = document.createElement('div');
@@ -1180,16 +1224,22 @@ async function refreshLabelGrid() {
     card.appendChild(qrHolder);
     const nameEl = document.createElement('div');
     nameEl.className = 'name';
-    nameEl.textContent = data.name;
+    nameEl.textContent = data.name + (data.shift ? ` (${data.shift})` : '');
     const codeEl = document.createElement('div');
     codeEl.className = 'code';
-    codeEl.textContent = d.id;
+    codeEl.textContent = data.id;
     card.appendChild(nameEl);
     card.appendChild(codeEl);
     grid.appendChild(card);
-    new QRCode(qrHolder, { text: d.id, width: 66, height: 66 });
+    new QRCode(qrHolder, { text: data.id, width: 66, height: 66 });
   });
-  if (!snap.docs.length) grid.innerHTML = '<div class="muted">Nothing to show yet — add some above.</div>';
+
+  if (!items.length) {
+    grid.innerHTML = '<div class="muted">Nothing matches — try a different search, or add some above.</div>';
+    countNote.textContent = '';
+  } else {
+    countNote.textContent = `${items.length} label${items.length === 1 ? '' : 's'} ready to print.`;
+  }
 }
 // refreshLabelGrid() is invoked from startApp() after login, not here.
 
