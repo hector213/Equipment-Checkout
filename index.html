@@ -113,7 +113,13 @@
   @media print{
     header, nav, .no-print{display:none !important;}
     body{background:#fff;}
-    .label-grid{grid-template-columns:repeat(3,1fr);}
+    main{max-width:none;padding:0;margin:0;}
+    /* Grid layouts are unreliable across page breaks in most browsers' print
+       engines — a row can get sliced in half right through a barcode. Switch
+       to a flex-wrap layout for printing only, and force each label to stay
+       whole on one page rather than splitting across two. */
+    .label-grid{display:flex !important;flex-wrap:wrap;gap:12px;}
+    .label-card{width:31%;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid;margin-bottom:14px;}
   }
 </style>
 </head>
