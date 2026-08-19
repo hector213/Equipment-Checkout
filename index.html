@@ -241,13 +241,12 @@
       <form class="inline" id="addEquipmentForm">
         <label>Barcode / Code<input required id="eqCode" placeholder="scan or type code"></label>
         <label>Name<input required id="eqName" placeholder="e.g. Impact Wrench #4"></label>
-        <label>Category<input id="eqCategory" placeholder="optional"></label>
         <button class="btn" type="submit">Add Item</button>
       </form>
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Single / Bulk Associate Import</h3>
-      <p class="muted">Add one associate, or paste a whole list at once - one per line as <code>Name, Shift</code> (shift is optional - a bare name works too). Badge codes are assigned automatically.</p>
+      <p class="muted">Add one associate, or paste a whole list at once - one per line as <code>Name, Shift</code> (shift is not optional - please add the shift for filtering). Badge codes are assigned automatically.</p>
       <textarea class="bulk-textarea" id="bulkAssocInput" placeholder="Jordan Smith, A1&#10;Casey Lee, B1&#10;Alex Rivera"></textarea>
       <button class="btn" id="bulkImportAssocBtn" type="button">Add / Import</button>
       <div class="muted" id="bulkImportAssocResult" style="margin-top:8px;"></div>
@@ -1196,7 +1195,6 @@ document.getElementById('addEquipmentForm').addEventListener('submit', async (e)
   if (!firebaseReady) return alert('Configure Firebase first.');
   const code = document.getElementById('eqCode').value.trim();
   const name = document.getElementById('eqName').value.trim();
-  const category = document.getElementById('eqCategory').value.trim();
   if (!code || !name) return;
   try {
     const existing = await db.collection('equipment').doc(code).get();
@@ -1205,7 +1203,7 @@ document.getElementById('addEquipmentForm').addEventListener('submit', async (e)
       return;
     }
     await db.collection('equipment').doc(code).set({
-      name, category: category || null, status: 'available',
+      name, status: 'available',
       assignedTo: null, assignedToName: null, assignedAt: null
     });
     e.target.reset();
@@ -1250,6 +1248,10 @@ document.getElementById('bulkImportAssocBtn').addEventListener('click', async ()
     const name = parts[0];
     const shift = parts[1] || '';
     if (!name) return;
+    if (!shift) {
+      skipped.push(`${name} (missing shift - add it as "Name, Shift")`);
+      return;
+    }
     if (existingNames.has(name.toLowerCase())) {
       skipped.push(`${name} (already exists as ${existingNames.get(name.toLowerCase()).id})`);
       return;
@@ -1261,12 +1263,12 @@ document.getElementById('bulkImportAssocBtn').addEventListener('click', async ()
 
   if (!toAdd.length) {
     resultEl.textContent = skipped.length
-      ? `Nothing new to add - all ${skipped.length} name(s) already exist: ${skipped.join(', ')}`
+      ? `Nothing new to add - all ${skipped.length} name(s) were skipped: ${skipped.join(', ')}`
       : 'Nothing new to add.';
     return;
   }
 
-  if (!confirm(`Import ${toAdd.length} associate(s)${skipped.length ? `, skipping ${skipped.length} that already exist` : ''}?`)) return;
+  if (!confirm(`Import ${toAdd.length} associate(s)${skipped.length ? `, skipping ${skipped.length}` : ''}?`)) return;
 
   try {
     const batch = db.batch();
@@ -1276,7 +1278,7 @@ document.getElementById('bulkImportAssocBtn').addEventListener('click', async ()
     await batch.commit();
     document.getElementById('bulkAssocInput').value = '';
     let msg = `Added ${toAdd.length} associate(s): ${toAdd.map(a => `${a.name} (${a.code})`).join(', ')}.`;
-    if (skipped.length) msg += ` Skipped ${skipped.length} already-existing name(s): ${skipped.join(', ')}.`;
+    if (skipped.length) msg += ` Skipped ${skipped.length}: ${skipped.join(', ')}.`;
     resultEl.textContent = msg;
     refreshLabelGrid();
   } catch (err) {
