@@ -86,6 +86,8 @@
   form.inline label{display:flex;flex-direction:column;font-size:12px;color:#555;gap:4px;}
   form.inline input, form.inline select{padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
   .bulk-textarea{width:100%;min-height:110px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;box-sizing:border-box;margin-bottom:10px;}
+  .state-note-row{display:flex;gap:6px;align-items:center;}
+  .state-note-input{padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;min-width:180px;}
   .label-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px;}
   .label-card{border:1px dashed #aaa;border-radius:6px;padding:10px;text-align:center;display:flex;flex-direction:column;align-items:center;}
   .label-card .qr{margin:0 auto 6px;display:flex;justify-content:center;}
@@ -245,7 +247,7 @@
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Single / Bulk Associate Import</h3>
-      <p class="muted">Add one associate, or paste a whole list at once — one per line as <code>Name, Shift</code> (shift is there to filter). Badge codes are assigned automatically.</p>
+      <p class="muted">Add one associate, or paste a whole list at once — one per line as <code>Name, Shift</code> (shift is optional — a bare name works too). Badge codes are assigned automatically.</p>
       <textarea class="bulk-textarea" id="bulkAssocInput" placeholder="Jordan Smith, A1&#10;Casey Lee, B1&#10;Alex Rivera"></textarea>
       <button class="btn" id="bulkImportAssocBtn" type="button">Add / Import</button>
       <div class="muted" id="bulkImportAssocResult" style="margin-top:8px;"></div>
@@ -260,8 +262,8 @@
     <div class="card no-print">
       <h3 style="margin-top:0;">Current Equipment</h3>
       <table>
-        <thead><tr><th>Item</th><th>Code</th><th>Status</th><th>Change Status</th><th></th></tr></thead>
-        <tbody id="manageEquipmentBody"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+        <thead><tr><th>Item</th><th>Code</th><th>Status</th><th>Current State</th><th>Change Status</th><th></th></tr></thead>
+        <tbody id="manageEquipmentBody"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="card no-print">
@@ -696,7 +698,7 @@ function renderManageEquipmentList() {
   const body = document.getElementById('manageEquipmentBody');
   if (!body) return;
   if (!allEquipment.length) {
-    body.innerHTML = '<tr><td colspan="5" class="muted">No equipment added yet</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="muted">No equipment added yet</td></tr>';
     return;
   }
   const ALL_STATUSES = ['available', 'in_repair', 'lost'];
@@ -709,6 +711,12 @@ function renderManageEquipmentList() {
       <td>${escapeHtml(e.name || '')}</td>
       <td class="muted">${escapeHtml(e.id)}</td>
       <td><span class="badge ${e.status}">${statusLabel(e.status)}</span>${e.ticketNumber ? ` <span class="muted">Ticket #${escapeHtml(e.ticketNumber)}</span>` : ''}</td>
+      <td>
+        <div class="state-note-row">
+          <input type="text" class="state-note-input" data-id="${escapeHtml(e.id)}" value="${escapeHtml(e.conditionNote || '').replace(/"/g, '&quot;')}" placeholder="e.g. broken screen, missing charger">
+          <button class="btn secondary small state-note-save" data-id="${escapeHtml(e.id)}">Save</button>
+        </div>
+      </td>
       <td>
         <select class="dev-status-select" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}" data-status="${e.status}">
           <option value="" selected disabled>Set status…</option>
@@ -726,6 +734,29 @@ function renderManageEquipmentList() {
       setEquipmentStatus(sel.dataset.id, sel.dataset.name, sel.dataset.status, sel.value);
     });
   });
+  body.querySelectorAll('.state-note-save').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = body.querySelector(`.state-note-input[data-id="${CSS.escape(btn.dataset.id)}"]`);
+      saveConditionNote(btn.dataset.id, input.value.trim());
+    });
+  });
+  body.querySelectorAll('.state-note-input').forEach(input => {
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        saveConditionNote(input.dataset.id, input.value.trim());
+      }
+    });
+  });
+}
+
+async function saveConditionNote(id, note) {
+  try {
+    await db.collection('equipment').doc(id).update({ conditionNote: note || null });
+  } catch (err) {
+    console.error(err);
+    alert('Could not save note: ' + err.message);
+  }
 }
 
 async function removeEquipment(id, name, status) {
