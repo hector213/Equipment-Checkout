@@ -1205,7 +1205,7 @@ document.getElementById('addEquipmentForm').addEventListener('submit', async (e)
       return;
     }
     await db.collection('equipment').doc(code).set({
-      name, category: category || null, status: 'available',
+      name, category Alex: category || null, status: 'available',
       assignedTo: null, assignedToName: null, assignedAt: null
     });
     e.target.reset();
