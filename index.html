@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Equipment Check-Out / Check-In</title>
 
-<!-- Firebase (compat SDK — simplest for a single-file app) -->
+<!-- Firebase (compat SDK - simplest for a single-file app) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -117,7 +117,7 @@
     body{background:#fff;}
     main{max-width:none;padding:0;margin:0;}
     /* Grid layouts are unreliable across page breaks in most browsers' print
-       engines — a row can get sliced in half right through a barcode. Switch
+       engines - a row can get sliced in half right through a barcode. Switch
        to a flex-wrap layout for printing only, and force each label to stay
        whole on one page rather than splitting across two. */
     .label-grid{display:flex !important;flex-wrap:wrap;gap:12px;}
@@ -176,7 +176,7 @@
         <div class="card muted">
           <b>Check out:</b> scan an <b>available</b> item → scan an <b>associate</b> badge.<br>
           <b>Check in:</b> scan the <b>associate</b>'s badge first → then scan the item(s) they're returning.
-          (Scanning a checked-out item by itself no longer checks it in — this stops one associate from returning
+          (Scanning a checked-out item by itself no longer checks it in - this stops one associate from returning
           another's item without their badge.)<br>
           Items marked <b>In Repair</b> or <b>Lost</b> can't be checked out until their status is reset from the Manage tab.<br>
           This box stays focused for a USB/Bluetooth scanner (acts like a keyboard + Enter).
@@ -247,7 +247,7 @@
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Single / Bulk Associate Import</h3>
-      <p class="muted">Add one associate, or paste a whole list at once — one per line as <code>Name, Shift</code> (shift is optional — a bare name works too). Badge codes are assigned automatically.</p>
+      <p class="muted">Add one associate, or paste a whole list at once - one per line as <code>Name, Shift</code> (shift is optional - a bare name works too). Badge codes are assigned automatically.</p>
       <textarea class="bulk-textarea" id="bulkAssocInput" placeholder="Jordan Smith, A1&#10;Casey Lee, B1&#10;Alex Rivera"></textarea>
       <button class="btn" id="bulkImportAssocBtn" type="button">Add / Import</button>
       <div class="muted" id="bulkImportAssocResult" style="margin-top:8px;"></div>
@@ -310,7 +310,7 @@
 
 <script>
 /* =========================================================================
-   FIREBASE CONFIG — paste your project's web app config here.
+   FIREBASE CONFIG - paste your project's web app config here.
    Firebase Console → Project settings → General → Your apps → SDK setup.
    ========================================================================= */
 const firebaseConfig = {
@@ -342,7 +342,7 @@ if (!firebaseReady) {
   warn.className = 'config-warning';
   warn.innerHTML = "<b>Firebase isn't configured yet.</b> Open index.html, fill in <code>firebaseConfig</code> near the bottom of the file with your project's values, then reload this page. See README.md for step-by-step instructions.";
   document.querySelector('main').prepend(warn);
-  // Nothing to log into yet — show the app shell directly so this warning is visible.
+  // Nothing to log into yet - show the app shell directly so this warning is visible.
   loginScreen.style.display = 'none';
   appShell.style.display = 'block';
 } else {
@@ -438,8 +438,8 @@ const pendingLine = document.getElementById('pendingLine');
 const cancelBtn = document.getElementById('cancelBtn');
 
 // pendingAction is either:
-//   { mode: 'checkout', equipmentId, equipmentData }                — awaiting the associate's badge
-//   { mode: 'checkin', associateId, associateName, remainingIds }   — awaiting the item(s) being returned
+//   { mode: 'checkout', equipmentId, equipmentData }                - awaiting the associate's badge
+//   { mode: 'checkin', associateId, associateName, remainingIds }   - awaiting the item(s) being returned
 let pendingAction = null;
 let pendingTimeout = null;
 
@@ -482,7 +482,7 @@ scanInput.addEventListener('keydown', async (e) => {
   const code = scanInput.value.trim();
   scanInput.value = '';
   if (!code) return;
-  if (!firebaseReady) { setState('error', 'Firebase not configured — see README.md'); return; }
+  if (!firebaseReady) { setState('error', 'Firebase not configured - see README.md'); return; }
   await handleScan(code);
 });
 
@@ -501,7 +501,7 @@ async function handleScan(code) {
   }
 }
 
-// No pending action yet — figure out whether they scanned an item (start a
+// No pending action yet - figure out whether they scanned an item (start a
 // check-out) or an associate badge (start a check-in for whatever they have).
 async function handleFreshScan(code) {
   const eqSnap = await db.collection('equipment').doc(code).get();
@@ -515,10 +515,10 @@ async function handleFreshScan(code) {
       setState('error', `${eq.name} is checked out to ${eq.assignedToName || 'someone'}. Have them scan their badge first to check it in.`);
       return;
     }
-    // available — start a check-out, awaiting the associate's badge
+    // available - start a check-out, awaiting the associate's badge
     pendingAction = { mode: 'checkout', equipmentId: code, equipmentData: eq };
     pendingLine.textContent = `Now scan the associate badge to check out: ${eq.name}`;
-    setState('waiting', `📦 ${eq.name} — waiting for associate badge…`);
+    setState('waiting', `📦 ${eq.name} - waiting for associate badge…`);
     cancelBtn.style.display = 'inline-block';
     armPendingTimeout('Timed out waiting for associate badge. Scan an equipment barcode to begin');
     return;
@@ -534,7 +534,7 @@ async function handleFreshScan(code) {
     }
     pendingAction = { mode: 'checkin', associateId: code, associateName: assoc.name, remainingIds: theirItems.map(i => i.id) };
     pendingLine.textContent = `Now scan the item(s) ${assoc.name} is returning (${theirItems.length} checked out: ${theirItems.map(i => i.name).join(', ')})`;
-    setState('waiting', `🧍 ${assoc.name} — waiting for item(s) to check in…`);
+    setState('waiting', `🧍 ${assoc.name} - waiting for item(s) to check in…`);
     cancelBtn.style.display = 'inline-block';
     armPendingTimeout('Timed out waiting for a returned item. Scan an equipment barcode or associate badge to begin');
     return;
@@ -547,11 +547,11 @@ async function handleFreshScan(code) {
 async function handleCheckoutAssociateScan(code) {
   const assocSnap = await db.collection('associates').doc(code).get();
   if (!assocSnap.exists) {
-    // maybe they scanned a different item instead — restart with that item
+    // maybe they scanned a different item instead - restart with that item
     const eqSnap = await db.collection('equipment').doc(code).get();
     if (eqSnap.exists) {
       resetPending();
-      setState('error', 'Expected an associate badge, got an item. Restarting — scan it again.');
+      setState('error', 'Expected an associate badge, got an item. Restarting - scan it again.');
       return handleScan(code);
     }
     setState('error', `Unrecognized associate code: ${code}`);
@@ -576,7 +576,7 @@ async function handleCheckoutAssociateScan(code) {
 async function handleCheckinItemScan(code) {
   const eqSnap = await db.collection('equipment').doc(code).get();
   if (!eqSnap.exists) {
-    // maybe they scanned a different associate's badge instead — restart for that associate
+    // maybe they scanned a different associate's badge instead - restart for that associate
     const assocSnap = await db.collection('associates').doc(code).get();
     if (assocSnap.exists) {
       resetPending();
@@ -588,7 +588,7 @@ async function handleCheckinItemScan(code) {
   const eq = eqSnap.data();
   const pending = pendingAction;
   if (!pending.remainingIds.includes(code)) {
-    // Not one of the items this associate is returning — rather than making
+    // Not one of the items this associate is returning - rather than making
     // the whole scanner wait on the rest of their return, treat this as the
     // start of a brand-new, unrelated transaction.
     resetPending();
@@ -607,7 +607,7 @@ async function handleCheckinItemScan(code) {
     setState('success', `✔ Checked in: ${eq.name} (all items returned for ${pending.associateName})`);
     resetPending();
   } else {
-    setState('success', `✔ Checked in: ${eq.name} — ${pending.remainingIds.length} more item(s) still checked out to ${pending.associateName}`);
+    setState('success', `✔ Checked in: ${eq.name} - ${pending.remainingIds.length} more item(s) still checked out to ${pending.associateName}`);
     const stillOut = allEquipment.filter(e => pending.remainingIds.includes(e.id)).map(e => e.name).join(', ');
     pendingLine.textContent = `Scan the remaining item(s) ${pending.associateName} is returning: ${stillOut}`;
     armPendingTimeout('Timed out waiting for a returned item. Scan an equipment barcode or associate badge to begin');
@@ -841,9 +841,9 @@ function renderHistory() {
   };
   const associateCell = (l) => {
     if (l.action === 'status_change') {
-      return l.changedByName ? `${escapeHtml(l.changedByName)} <span class="muted">(changed by)</span>` : '—';
+      return l.changedByName ? `${escapeHtml(l.changedByName)} <span class="muted">(changed by)</span>` : '-';
     }
-    return escapeHtml(l.associateName || '—');
+    return escapeHtml(l.associateName || '-');
   };
   body.innerHTML = rows.map(l => `
     <tr>
@@ -958,7 +958,7 @@ function flagLabel(flag) {
     OK: ''
   }[flag] || '';
 }
-// Plain-text version for PDFs — jsPDF's built-in fonts can't render emoji,
+// Plain-text version for PDFs - jsPDF's built-in fonts can't render emoji,
 // so using flagLabel() there prints garbled characters instead of the icon.
 function flagLabelPlain(flag) {
   return {
@@ -1153,7 +1153,7 @@ async function toggleUserActive(uid, isCurrentlyActive, name) {
 // Creating a user with the client SDK normally signs the browser in AS that
 // new user, which would kick the admin out of their own session. Working
 // around that with a second, throwaway Firebase app instance that we use
-// just for the signup call, then immediately sign out of and discard —
+// just for the signup call, then immediately sign out of and discard -
 // the admin's own session (on the default app) is never touched.
 function getSecondaryAuth() {
   let secondaryApp;
@@ -1183,7 +1183,7 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     e.target.reset();
-    alert(`User added: ${name}. Share the email and temporary password with them directly — this app has no "forgot password" flow yet, so make sure they can sign in before you close this out.`);
+    alert(`User added: ${name}. Share the email and temporary password with them directly - this app has no "forgot password" flow yet, so make sure they can sign in before you close this out.`);
   } catch (err) {
     console.error(err);
     alert('Could not add user: ' + err.message);
@@ -1261,7 +1261,7 @@ document.getElementById('bulkImportAssocBtn').addEventListener('click', async ()
 
   if (!toAdd.length) {
     resultEl.textContent = skipped.length
-      ? `Nothing new to add — all ${skipped.length} name(s) already exist: ${skipped.join(', ')}`
+      ? `Nothing new to add - all ${skipped.length} name(s) already exist: ${skipped.join(', ')}`
       : 'Nothing new to add.';
     return;
   }
@@ -1347,7 +1347,7 @@ function refreshLabelGrid() {
   });
 
   if (!items.length) {
-    grid.innerHTML = '<div class="muted">Nothing matches — try a different search, or add some above.</div>';
+    grid.innerHTML = '<div class="muted">Nothing matches - try a different search, or add some above.</div>';
     countNote.textContent = '';
   } else {
     countNote.textContent = `${items.length} label${items.length === 1 ? '' : 's'} ready to print.`;
