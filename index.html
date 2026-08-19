@@ -244,19 +244,10 @@
       </form>
     </div>
     <div class="card no-print">
-      <h3 style="margin-top:0;">Add Associate</h3>
-      <form class="inline" id="addAssociateForm">
-        <label>Badge Code<input required id="assocCode" placeholder="scan or type code"></label>
-        <label>Name<input required id="assocName" placeholder="e.g. Jordan Smith"></label>
-        <label>Shift<input id="assocShift" placeholder="e.g. A1, A2, B1 (optional)"></label>
-        <button class="btn" type="submit">Add Associate</button>
-      </form>
-    </div>
-    <div class="card no-print">
-      <h3 style="margin-top:0;">Bulk Import Associates</h3>
-      <p class="muted">Paste one associate per line as <code>Name, Shift</code> (shift is optional — you can also just put a name by itself). Badge codes are assigned automatically, so this is safe to use even with a big list.</p>
+      <h3 style="margin-top:0;">Single / Bulk Associate Import</h3>
+      <p class="muted">Add one associate, or paste a whole list at once — one per line as <code>Name, Shift</code> (shift is optional — a bare name works too). Badge codes are assigned automatically.</p>
       <textarea class="bulk-textarea" id="bulkAssocInput" placeholder="Jordan Smith, A1&#10;Casey Lee, B1&#10;Alex Rivera"></textarea>
-      <button class="btn" id="bulkImportAssocBtn" type="button">Import List</button>
+      <button class="btn" id="bulkImportAssocBtn" type="button">Add / Import</button>
       <div class="muted" id="bulkImportAssocResult" style="margin-top:8px;"></div>
     </div>
     <div class="card no-print">
@@ -1197,29 +1188,6 @@ document.getElementById('addEquipmentForm').addEventListener('submit', async (e)
   } catch (err) {
     console.error(err);
     alert('Could not add equipment: ' + err.message);
-  }
-});
-
-document.getElementById('addAssociateForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  if (!firebaseReady) return alert('Configure Firebase first.');
-  const code = document.getElementById('assocCode').value.trim();
-  const name = document.getElementById('assocName').value.trim();
-  const shift = document.getElementById('assocShift').value.trim();
-  if (!code || !name) return;
-  try {
-    const existing = await db.collection('associates').doc(code).get();
-    if (existing.exists) {
-      alert(`That badge code (${code}) is already used by "${existing.data().name}". Pick a different code, or remove that associate first if they're no longer with us.`);
-      return;
-    }
-    await db.collection('associates').doc(code).set({ name, active: true, shift: shift || null });
-    e.target.reset();
-    refreshLabelGrid();
-    alert('Associate added: ' + name);
-  } catch (err) {
-    console.error(err);
-    alert('Could not add associate: ' + err.message);
   }
 });
 
