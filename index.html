@@ -86,8 +86,8 @@
   form.inline label{display:flex;flex-direction:column;font-size:12px;color:#555;gap:4px;}
   form.inline input, form.inline select{padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
   .bulk-textarea{width:100%;min-height:110px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;box-sizing:border-box;margin-bottom:10px;}
-  .state-note-row{display:flex;gap:6px;align-items:center;}
-  .state-note-input{padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;min-width:180px;}
+  .state-note-cell{display:flex;flex-direction:column;gap:4px;align-items:flex-start;max-width:220px;}
+  .state-note-text{font-size:12px;color:#555;white-space:normal;word-break:break-word;}
   .label-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px;}
   .label-card{border:1px dashed #aaa;border-radius:6px;padding:10px;text-align:center;display:flex;flex-direction:column;align-items:center;}
   .label-card .qr{margin:0 auto 6px;display:flex;justify-content:center;}
@@ -712,9 +712,9 @@ function renderManageEquipmentList() {
       <td class="muted">${escapeHtml(e.id)}</td>
       <td><span class="badge ${e.status}">${statusLabel(e.status)}</span>${e.ticketNumber ? ` <span class="muted">Ticket #${escapeHtml(e.ticketNumber)}</span>` : ''}</td>
       <td>
-        <div class="state-note-row">
-          <input type="text" class="state-note-input" data-id="${escapeHtml(e.id)}" value="${escapeHtml(e.conditionNote || '').replace(/"/g, '&quot;')}" placeholder="e.g. broken screen, missing charger">
-          <button class="btn secondary small state-note-save" data-id="${escapeHtml(e.id)}">Save</button>
+        <div class="state-note-cell">
+          <button class="btn secondary small state-note-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}">📝 Notes</button>
+          ${e.conditionNote ? `<div class="state-note-text">${escapeHtml(e.conditionNote)}</div>` : ''}
         </div>
       </td>
       <td>
@@ -734,18 +734,13 @@ function renderManageEquipmentList() {
       setEquipmentStatus(sel.dataset.id, sel.dataset.name, sel.dataset.status, sel.value);
     });
   });
-  body.querySelectorAll('.state-note-save').forEach(btn => {
+  body.querySelectorAll('.state-note-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const input = body.querySelector(`.state-note-input[data-id="${CSS.escape(btn.dataset.id)}"]`);
-      saveConditionNote(btn.dataset.id, input.value.trim());
-    });
-  });
-  body.querySelectorAll('.state-note-input').forEach(input => {
-    input.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        saveConditionNote(input.dataset.id, input.value.trim());
-      }
+      const item = allEquipment.find(x => x.id === btn.dataset.id);
+      const current = (item && item.conditionNote) || '';
+      const entered = prompt(`Current state notes for "${btn.dataset.name}" (e.g. broken screen, missing parts):`, current);
+      if (entered === null) return; // cancelled
+      saveConditionNote(btn.dataset.id, entered.trim());
     });
   });
 }
