@@ -1229,6 +1229,11 @@ document.getElementById('addEquipmentForm').addEventListener('submit', async (e)
   const name = document.getElementById('eqName').value.trim();
   const type = document.getElementById('eqType').value;
   if (!name || !type) return;
+  const dupe = allEquipment.find(x => (x.name || '').trim().toLowerCase() === name.toLowerCase());
+  if (dupe) {
+    alert(`"${name}" already exists (code: ${dupe.id}). Pick a different name, or remove the existing one first if it's no longer needed.`);
+    return;
+  }
   try {
     const usedCodes = new Set(allEquipment.map(x => x.id));
     const code = nextAutoDeviceCode(type, usedCodes);
