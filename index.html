@@ -460,6 +460,14 @@ const cancelBtn = document.getElementById('cancelBtn');
 let pendingAction = null;
 let pendingTimeout = null;
 
+// Batteries aren't individually checked out to associates - they just live
+// with their device. They're excluded from the Scan tab and check-out flow,
+// but are still scannable during an Audit walk-through.
+const BATTERY_TYPES = ['Handheld Battery', 'RF Gun Battery', 'Tablet Battery'];
+function isBatteryType(item) {
+  return !!item && BATTERY_TYPES.includes(item.deviceType);
+}
+
 function setState(kind, msg) {
   scanState.className = 'scan-state ' + kind;
   scanState.textContent = msg;
@@ -524,6 +532,10 @@ async function handleFreshScan(code) {
   const eqSnap = await db.collection('equipment').doc(code).get();
   if (eqSnap.exists) {
     const eq = eqSnap.data();
+    if (isBatteryType(eq)) {
+      setState('error', `${eq.name} is a battery and isn't checked out individually. It can only be scanned during an Audit.`);
+      return;
+    }
     if (eq.status === 'in_repair' || eq.status === 'lost') {
       setState('error', `${eq.name} is marked ${statusLabel(eq.status)} and can't be checked out. Reset its status in the Device Status panel first.`);
       return;
@@ -653,7 +665,7 @@ function initEquipmentListener() {
 function renderDeviceList() {
   const list = document.getElementById('deviceList');
   if (!list) return;
-  const rows = [...allEquipment].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const rows = allEquipment.filter(e => !isBatteryType(e)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   if (!rows.length) { list.innerHTML = '<div class="muted">No equipment added yet</div>'; return; }
   list.innerHTML = rows.map(e => {
     let meta = escapeHtml(e.id);
