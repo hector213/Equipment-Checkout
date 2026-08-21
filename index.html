@@ -54,6 +54,9 @@
   table{width:100%;border-collapse:collapse;font-size:14px;}
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);}
   th{background:#f0f3f7;font-weight:600;color:#3c4a5a;}
+  .scroll-table-wrap{max-height:720px;overflow-y:auto;}
+  .scroll-table-wrap table{margin:0;}
+  .scroll-table-wrap thead th{position:sticky;top:0;z-index:1;}
   .badge{padding:3px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;}
   .badge.available{background:#e9f9ee;color:#146c34;}
   .badge.checked_out{background:#fdeceb;color:#c0392b;}
@@ -253,10 +256,12 @@
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Current Associates</h3>
-      <table>
-        <thead><tr><th>Name</th><th>Badge Code</th><th>Shift</th><th></th></tr></thead>
-        <tbody id="manageAssociateBody"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
-      </table>
+      <div class="scroll-table-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Badge Code</th><th>Shift</th><th></th></tr></thead>
+          <tbody id="manageAssociateBody"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Current Equipment</h3>
