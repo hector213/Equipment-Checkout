@@ -241,8 +241,9 @@
   <div class="tab" id="tab-manage">
     <div class="card no-print">
       <h3 style="margin-top:0;">Add Equipment</h3>
+      <p class="muted">Give the item a name (e.g. its asset tag, like <code>TC03</code>), pick its type, and a code is generated automatically as <code>Type-01</code>, <code>Type-02</code>, etc. That generated code is what the QR label encodes.</p>
       <form class="inline" id="addEquipmentForm">
-        <label>Device ID<input required id="eqCode" placeholder="scan or type device ID"></label>
+        <label>Name<input required id="eqName" placeholder="e.g. TC03"></label>
         <label>Device Type
           <select required id="eqType">
             <option value="" selected disabled>Select type…</option>
@@ -1207,25 +1208,37 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
 });
 
 /* ---------------- Manage tab ---------------- */
+function nextAutoDeviceCode(type, usedCodes) {
+  const prefix = type.replace(/\s+/g, '');
+  let n = 1;
+  usedCodes.forEach(id => {
+    const m = new RegExp(`^${prefix}-(\\d+)$`, 'i').exec(id || '');
+    if (m) n = Math.max(n, parseInt(m[1], 10) + 1);
+  });
+  let code = `${prefix}-${String(n).padStart(2, '0')}`;
+  while (usedCodes.has(code)) {
+    n++;
+    code = `${prefix}-${String(n).padStart(2, '0')}`;
+  }
+  return code;
+}
+
 document.getElementById('addEquipmentForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!firebaseReady) return alert('Configure Firebase first.');
-  const code = document.getElementById('eqCode').value.trim();
-  const name = document.getElementById('eqType').value;
-  if (!code || !name) return;
+  const name = document.getElementById('eqName').value.trim();
+  const type = document.getElementById('eqType').value;
+  if (!name || !type) return;
   try {
-    const existing = await db.collection('equipment').doc(code).get();
-    if (existing.exists) {
-      alert(`That device ID (${code}) is already used by "${existing.data().name}". Pick a different device ID, or remove that item first if it's no longer needed.`);
-      return;
-    }
+    const usedCodes = new Set(allEquipment.map(x => x.id));
+    const code = nextAutoDeviceCode(type, usedCodes);
     await db.collection('equipment').doc(code).set({
-      name, status: 'available',
+      name, deviceType: type, status: 'available',
       assignedTo: null, assignedToName: null, assignedAt: null
     });
     e.target.reset();
     refreshLabelGrid();
-    alert('Equipment added: ' + name);
+    alert(`Equipment added: ${name} (code: ${code})`);
   } catch (err) {
     console.error(err);
     alert('Could not add equipment: ' + err.message);
