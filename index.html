@@ -282,11 +282,11 @@
     <div class="card no-print">
       <h3 style="margin-top:0;">Current Equipment</h3>
       <div class="filter-row">
-        <input id="manageEquipmentSearch" placeholder="Search name, code, type, status, or who has it…">
+        <input id="manageEquipmentSearch" placeholder="Search name, code, type, status, state/notes, or who has it…">
       </div>
       <table>
-        <thead><tr><th>Item</th><th>Code</th><th>Status</th><th>Current State</th><th>Change Status</th><th></th></tr></thead>
-        <tbody id="manageEquipmentBody"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+        <thead><tr><th>Item</th><th>Code</th><th>Status</th><th>Current State</th><th>Notes</th><th>Change Status</th><th></th></tr></thead>
+        <tbody id="manageEquipmentBody"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="card no-print">
@@ -733,7 +733,7 @@ function renderManageEquipmentList() {
   const body = document.getElementById('manageEquipmentBody');
   if (!body) return;
   if (!allEquipment.length) {
-    body.innerHTML = '<tr><td colspan="6" class="muted">No equipment added yet</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="muted">No equipment added yet</td></tr>';
     return;
   }
   const ALL_STATUSES = ['available', 'in_repair', 'lost'];
@@ -745,11 +745,13 @@ function renderManageEquipmentList() {
       (e.id || '').toLowerCase().includes(q) ||
       (e.deviceType || '').toLowerCase().includes(q) ||
       statusLabel(e.status).toLowerCase().includes(q) ||
-      (e.assignedToName || '').toLowerCase().includes(q)
+      (e.assignedToName || '').toLowerCase().includes(q) ||
+      (e.currentState || '').toLowerCase().includes(q) ||
+      (e.conditionNote || '').toLowerCase().includes(q)
     );
   }
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="6" class="muted">No equipment matches your search</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="muted">No equipment matches your search</td></tr>';
     return;
   }
   body.innerHTML = rows.map(e => {
@@ -762,7 +764,13 @@ function renderManageEquipmentList() {
       <td><span class="badge ${e.status}">${statusLabel(e.status)}</span>${e.ticketNumber ? ` <span class="muted">Ticket #${escapeHtml(e.ticketNumber)}</span>` : ''}</td>
       <td>
         <div class="state-note-cell">
-          <button class="btn secondary small state-note-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}">📝 Notes</button>
+          <button class="btn secondary small current-state-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}">📝 State</button>
+          ${e.currentState ? `<div class="state-note-text">${escapeHtml(e.currentState)}</div>` : ''}
+        </div>
+      </td>
+      <td>
+        <div class="state-note-cell">
+          <button class="btn secondary small notes-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}">📝 Notes</button>
           ${e.conditionNote ? `<div class="state-note-text">${escapeHtml(e.conditionNote)}</div>` : ''}
         </div>
       </td>
@@ -783,15 +791,33 @@ function renderManageEquipmentList() {
       setEquipmentStatus(sel.dataset.id, sel.dataset.name, sel.dataset.status, sel.value);
     });
   });
-  body.querySelectorAll('.state-note-btn').forEach(btn => {
+  body.querySelectorAll('.current-state-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = allEquipment.find(x => x.id === btn.dataset.id);
+      const current = (item && item.currentState) || '';
+      const entered = prompt(`Current state for "${btn.dataset.name}" (e.g. broken screen, cracked, missing charger):`, current);
+      if (entered === null) return; // cancelled
+      saveCurrentState(btn.dataset.id, entered.trim());
+    });
+  });
+  body.querySelectorAll('.notes-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const item = allEquipment.find(x => x.id === btn.dataset.id);
       const current = (item && item.conditionNote) || '';
-      const entered = prompt(`Current state notes for "${btn.dataset.name}" (e.g. broken screen, missing parts):`, current);
+      const entered = prompt(`Additional notes for "${btn.dataset.name}":`, current);
       if (entered === null) return; // cancelled
       saveConditionNote(btn.dataset.id, entered.trim());
     });
   });
+}
+
+async function saveCurrentState(id, state) {
+  try {
+    await db.collection('equipment').doc(id).update({ currentState: state || null });
+  } catch (err) {
+    console.error(err);
+    alert('Could not save current state: ' + err.message);
+  }
 }
 
 async function saveConditionNote(id, note) {
