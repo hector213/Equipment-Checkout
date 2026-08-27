@@ -269,6 +269,9 @@
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Current Associates</h3>
+      <div class="filter-row">
+        <input id="manageAssociateSearch" placeholder="Search name, badge code, or shift…">
+      </div>
       <div class="scroll-table-wrap">
         <table>
           <thead><tr><th>Name</th><th>Badge Code</th><th>Shift</th><th></th></tr></thead>
@@ -278,6 +281,9 @@
     </div>
     <div class="card no-print">
       <h3 style="margin-top:0;">Current Equipment</h3>
+      <div class="filter-row">
+        <input id="manageEquipmentSearch" placeholder="Search name, code, type, status, or who has it…">
+      </div>
       <table>
         <thead><tr><th>Item</th><th>Code</th><th>Status</th><th>Current State</th><th>Change Status</th><th></th></tr></thead>
         <tbody id="manageEquipmentBody"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
@@ -731,7 +737,21 @@ function renderManageEquipmentList() {
     return;
   }
   const ALL_STATUSES = ['available', 'in_repair', 'lost'];
-  const rows = [...allEquipment].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const q = (document.getElementById('manageEquipmentSearch').value || '').trim().toLowerCase();
+  let rows = [...allEquipment].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (q) {
+    rows = rows.filter(e =>
+      (e.name || '').toLowerCase().includes(q) ||
+      (e.id || '').toLowerCase().includes(q) ||
+      (e.deviceType || '').toLowerCase().includes(q) ||
+      statusLabel(e.status).toLowerCase().includes(q) ||
+      (e.assignedToName || '').toLowerCase().includes(q)
+    );
+  }
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="6" class="muted">No equipment matches your search</td></tr>';
+    return;
+  }
   body.innerHTML = rows.map(e => {
     const options = ALL_STATUSES.filter(s => s !== e.status)
       .map(s => `<option value="${s}">Mark ${statusLabel(s)}</option>`).join('');
@@ -815,17 +835,50 @@ function renderManageAssociateList() {
     body.innerHTML = '<tr><td colspan="4" class="muted">No associates added yet</td></tr>';
     return;
   }
-  const rows = [...allAssociates].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const q = (document.getElementById('manageAssociateSearch').value || '').trim().toLowerCase();
+  let rows = [...allAssociates].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (q) {
+    rows = rows.filter(a =>
+      (a.name || '').toLowerCase().includes(q) ||
+      (a.id || '').toLowerCase().includes(q) ||
+      (a.shift || '').toLowerCase().includes(q)
+    );
+  }
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="4" class="muted">No associates match your search</td></tr>';
+    return;
+  }
   body.innerHTML = rows.map(a => `
     <tr>
       <td>${escapeHtml(a.name || '')}</td>
       <td class="muted">${escapeHtml(a.id)}</td>
       <td>${escapeHtml(a.shift || '')}</td>
-      <td><button class="btn secondary small remove-assoc-btn" data-id="${escapeHtml(a.id)}" data-name="${escapeHtml(a.name || '')}">Remove</button></td>
+      <td>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn secondary small edit-shift-btn" data-id="${escapeHtml(a.id)}" data-name="${escapeHtml(a.name || '')}" data-shift="${escapeHtml(a.shift || '')}">Edit Shift</button>
+          <button class="btn secondary small remove-assoc-btn" data-id="${escapeHtml(a.id)}" data-name="${escapeHtml(a.name || '')}">Remove</button>
+        </div>
+      </td>
     </tr>`).join('');
   body.querySelectorAll('.remove-assoc-btn').forEach(btn => {
     btn.addEventListener('click', () => removeAssociate(btn.dataset.id, btn.dataset.name));
   });
+  body.querySelectorAll('.edit-shift-btn').forEach(btn => {
+    btn.addEventListener('click', () => editAssociateShift(btn.dataset.id, btn.dataset.name, btn.dataset.shift));
+  });
+}
+
+async function editAssociateShift(id, name, currentShift) {
+  const entered = prompt(`New shift for ${name}:`, currentShift || '');
+  if (entered === null) return; // cancelled
+  const shift = entered.trim();
+  if (!shift) { alert('Shift cannot be blank.'); return; }
+  try {
+    await db.collection('associates').doc(id).update({ shift });
+  } catch (err) {
+    console.error(err);
+    alert('Could not update shift: ' + err.message);
+  }
 }
 
 async function removeAssociate(id, name) {
@@ -883,6 +936,8 @@ function renderHistory() {
     </tr>`).join('');
 }
 document.getElementById('historySearch').addEventListener('input', renderHistory);
+document.getElementById('manageAssociateSearch').addEventListener('input', renderManageAssociateList);
+document.getElementById('manageEquipmentSearch').addEventListener('input', renderManageEquipmentList);
 
 /* ---------------- Audit tab ---------------- */
 let auditSnapshot = null; // [{id, name, status, assignedToName}]
