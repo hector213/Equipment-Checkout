@@ -94,6 +94,8 @@
   .notes-log{display:flex;flex-direction:column;gap:6px;width:100%;max-height:150px;overflow-y:auto;}
   .notes-log .state-note-text{border-top:1px solid var(--border);padding-top:4px;}
   .notes-log .state-note-text:first-child{border-top:none;padding-top:0;}
+  .note-line-head{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;}
+  .icon-btn{padding:0 6px;font-size:11px;line-height:1.8;flex-shrink:0;}
   .label-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px;}
   .label-card{border:1px dashed #aaa;border-radius:6px;padding:10px;text-align:center;display:flex;flex-direction:column;align-items:center;}
   .label-card .qr{margin:0 auto 6px;display:flex;justify-content:center;}
@@ -751,6 +753,7 @@ function renderManageEquipmentList() {
       (e.assignedToName || '').toLowerCase().includes(q) ||
       (e.currentState || '').toLowerCase().includes(q) ||
       (e.conditionNote || '').toLowerCase().includes(q) ||
+      (Array.isArray(e.currentStateLog) ? e.currentStateLog.map(n => n.text || '').join(' ') : '').toLowerCase().includes(q) ||
       (Array.isArray(e.notes) ? e.notes.map(n => n.text || '').join(' ') : '').toLowerCase().includes(q)
     );
   }
@@ -768,14 +771,14 @@ function renderManageEquipmentList() {
       <td><span class="badge ${e.status}">${statusLabel(e.status)}</span>${e.ticketNumber ? ` <span class="muted">Ticket #${escapeHtml(e.ticketNumber)}</span>` : ''}</td>
       <td>
         <div class="state-note-cell">
-          <button class="btn secondary small current-state-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}">📝 State</button>
-          ${e.currentState ? `<div class="state-note-text">${escapeHtml(e.currentState)}</div>` : ''}
+          <button class="btn secondary small log-add-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}" data-field="currentStateLog" data-legacy-field="currentState" data-kind="current state entry">📝 Add State</button>
+          ${renderFieldLog(e, 'currentStateLog', 'currentState')}
         </div>
       </td>
       <td>
         <div class="state-note-cell">
-          <button class="btn secondary small notes-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}">📝 Add Note</button>
-          ${renderNotesLog(e)}
+          <button class="btn secondary small log-add-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}" data-field="notes" data-legacy-field="conditionNote" data-kind="note">📝 Add Note</button>
+          ${renderFieldLog(e, 'notes', 'conditionNote')}
         </div>
       </td>
       <td>
@@ -795,39 +798,47 @@ function renderManageEquipmentList() {
       setEquipmentStatus(sel.dataset.id, sel.dataset.name, sel.dataset.status, sel.value);
     });
   });
-  body.querySelectorAll('.current-state-btn').forEach(btn => {
+  body.querySelectorAll('.log-add-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const item = allEquipment.find(x => x.id === btn.dataset.id);
-      const current = (item && item.currentState) || '';
-      const entered = prompt(`Current state for "${btn.dataset.name}" (e.g. broken screen, cracked, missing charger):`, current);
-      if (entered === null) return; // cancelled
-      saveCurrentState(btn.dataset.id, entered.trim());
-    });
-  });
-  body.querySelectorAll('.notes-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const entered = prompt(`Add a note for "${btn.dataset.name}":`, '');
+      const entered = prompt(`Add a ${btn.dataset.kind} for "${btn.dataset.name}":`, '');
       if (entered === null) return; // cancelled
       const text = entered.trim();
       if (!text) return;
-      addEquipmentNote(btn.dataset.id, text);
+      addEquipmentLogEntry(btn.dataset.id, btn.dataset.field, text);
+    });
+  });
+  body.querySelectorAll('.delete-log-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!confirm('Delete this entry? This can\'t be undone.')) return;
+      removeEquipmentLogEntry(btn.dataset.id, btn.dataset.field, btn.dataset.legacyField, btn.dataset.noteIndex);
     });
   });
 }
 
-// Renders the notes log (newest first) under the Notes button. Falls back to
-// the old single-note field for any item whose only note predates this
-// change, so nothing already saved gets lost.
-function renderNotesLog(e) {
-  const entries = Array.isArray(e.notes) ? [...e.notes].reverse() : [];
-  if (!entries.length) {
-    return e.conditionNote ? `<div class="state-note-text">${escapeHtml(e.conditionNote)}</div>` : '';
+// Renders a dated, add-only log (newest first) for the given array field
+// (currentStateLog or notes), each entry with its own delete button. Falls
+// back to rendering the old single-value field (currentState / conditionNote)
+// for any item whose only entry predates this change, so nothing already
+// saved gets lost - that legacy entry can be deleted too, which just clears
+// the old field.
+function renderFieldLog(e, arrField, legacyField) {
+  const raw = Array.isArray(e[arrField]) ? e[arrField] : [];
+  if (!raw.length) {
+    if (!e[legacyField]) return '';
+    return `<div class="state-note-text">
+      <div class="note-line-head"><span></span><button class="btn secondary small icon-btn delete-log-btn" data-id="${escapeHtml(e.id)}" data-field="${arrField}" data-legacy-field="${legacyField}" data-note-index="legacy" title="Delete">✕</button></div>
+      ${escapeHtml(e[legacyField])}
+    </div>`;
   }
-  return `<div class="notes-log">` + entries.map(n => {
+  const indexed = raw.map((n, i) => ({ n, i })).reverse();
+  return `<div class="notes-log">` + indexed.map(({ n, i }) => {
     const when = formatNoteTime(n.at);
     const who = escapeHtml(n.byName || 'Unknown');
     const meta = when ? `<b>${who}</b> - ${escapeHtml(when)}` : `<b>${who}</b>`;
-    return `<div class="state-note-text">${meta}<br>${escapeHtml(n.text || '')}</div>`;
+    return `<div class="state-note-text">
+      <div class="note-line-head"><span>${meta}</span><button class="btn secondary small icon-btn delete-log-btn" data-id="${escapeHtml(e.id)}" data-field="${arrField}" data-legacy-field="${legacyField}" data-note-index="${i}" title="Delete">✕</button></div>
+      ${escapeHtml(n.text || '')}
+    </div>`;
   }).join('') + `</div>`;
 }
 
@@ -837,18 +848,9 @@ function formatNoteTime(at) {
   return isNaN(d) ? '' : d.toLocaleString();
 }
 
-async function saveCurrentState(id, state) {
-  try {
-    await db.collection('equipment').doc(id).update({ currentState: state || null });
-  } catch (err) {
-    console.error(err);
-    alert('Could not save current state: ' + err.message);
-  }
-}
-
-async function addEquipmentNote(id, text) {
+async function addEquipmentLogEntry(id, field, text) {
   const item = allEquipment.find(x => x.id === id);
-  const existing = Array.isArray(item && item.notes) ? item.notes : [];
+  const existing = Array.isArray(item && item[field]) ? item[field] : [];
   const entry = {
     text,
     at: new Date(),
@@ -856,10 +858,27 @@ async function addEquipmentNote(id, text) {
     byUid: (currentUser && currentUser.uid) || null
   };
   try {
-    await db.collection('equipment').doc(id).update({ notes: [...existing, entry] });
+    await db.collection('equipment').doc(id).update({ [field]: [...existing, entry] });
   } catch (err) {
     console.error(err);
-    alert('Could not save note: ' + err.message);
+    alert('Could not save: ' + err.message);
+  }
+}
+
+async function removeEquipmentLogEntry(id, field, legacyField, noteIndex) {
+  try {
+    if (noteIndex === 'legacy') {
+      await db.collection('equipment').doc(id).update({ [legacyField]: null });
+      return;
+    }
+    const item = allEquipment.find(x => x.id === id);
+    const existing = Array.isArray(item && item[field]) ? item[field] : [];
+    const idx = parseInt(noteIndex, 10);
+    const updated = existing.filter((_, i) => i !== idx);
+    await db.collection('equipment').doc(id).update({ [field]: updated });
+  } catch (err) {
+    console.error(err);
+    alert('Could not delete: ' + err.message);
   }
 }
 
