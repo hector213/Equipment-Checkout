@@ -91,6 +91,9 @@
   .bulk-textarea{width:100%;min-height:110px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;box-sizing:border-box;margin-bottom:10px;}
   .state-note-cell{display:flex;flex-direction:column;gap:4px;align-items:flex-start;width:100%;}
   .state-note-text{font-size:12px;color:#555;white-space:normal;word-break:break-word;width:100%;}
+  .notes-log{display:flex;flex-direction:column;gap:6px;width:100%;max-height:150px;overflow-y:auto;}
+  .notes-log .state-note-text{border-top:1px solid var(--border);padding-top:4px;}
+  .notes-log .state-note-text:first-child{border-top:none;padding-top:0;}
   .label-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px;}
   .label-card{border:1px dashed #aaa;border-radius:6px;padding:10px;text-align:center;display:flex;flex-direction:column;align-items:center;}
   .label-card .qr{margin:0 auto 6px;display:flex;justify-content:center;}
@@ -747,7 +750,8 @@ function renderManageEquipmentList() {
       statusLabel(e.status).toLowerCase().includes(q) ||
       (e.assignedToName || '').toLowerCase().includes(q) ||
       (e.currentState || '').toLowerCase().includes(q) ||
-      (e.conditionNote || '').toLowerCase().includes(q)
+      (e.conditionNote || '').toLowerCase().includes(q) ||
+      (Array.isArray(e.notes) ? e.notes.map(n => n.text || '').join(' ') : '').toLowerCase().includes(q)
     );
   }
   if (!rows.length) {
@@ -770,8 +774,8 @@ function renderManageEquipmentList() {
       </td>
       <td>
         <div class="state-note-cell">
-          <button class="btn secondary small notes-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}">📝 Notes</button>
-          ${e.conditionNote ? `<div class="state-note-text">${escapeHtml(e.conditionNote)}</div>` : ''}
+          <button class="btn secondary small notes-btn" data-id="${escapeHtml(e.id)}" data-name="${escapeHtml(e.name || '')}">📝 Add Note</button>
+          ${renderNotesLog(e)}
         </div>
       </td>
       <td>
@@ -802,13 +806,35 @@ function renderManageEquipmentList() {
   });
   body.querySelectorAll('.notes-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const item = allEquipment.find(x => x.id === btn.dataset.id);
-      const current = (item && item.conditionNote) || '';
-      const entered = prompt(`Additional notes for "${btn.dataset.name}":`, current);
+      const entered = prompt(`Add a note for "${btn.dataset.name}":`, '');
       if (entered === null) return; // cancelled
-      saveConditionNote(btn.dataset.id, entered.trim());
+      const text = entered.trim();
+      if (!text) return;
+      addEquipmentNote(btn.dataset.id, text);
     });
   });
+}
+
+// Renders the notes log (newest first) under the Notes button. Falls back to
+// the old single-note field for any item whose only note predates this
+// change, so nothing already saved gets lost.
+function renderNotesLog(e) {
+  const entries = Array.isArray(e.notes) ? [...e.notes].reverse() : [];
+  if (!entries.length) {
+    return e.conditionNote ? `<div class="state-note-text">${escapeHtml(e.conditionNote)}</div>` : '';
+  }
+  return `<div class="notes-log">` + entries.map(n => {
+    const when = formatNoteTime(n.at);
+    const who = escapeHtml(n.byName || 'Unknown');
+    const meta = when ? `<b>${who}</b> - ${escapeHtml(when)}` : `<b>${who}</b>`;
+    return `<div class="state-note-text">${meta}<br>${escapeHtml(n.text || '')}</div>`;
+  }).join('') + `</div>`;
+}
+
+function formatNoteTime(at) {
+  if (!at) return '';
+  const d = typeof at.toDate === 'function' ? at.toDate() : new Date(at);
+  return isNaN(d) ? '' : d.toLocaleString();
 }
 
 async function saveCurrentState(id, state) {
@@ -820,9 +846,17 @@ async function saveCurrentState(id, state) {
   }
 }
 
-async function saveConditionNote(id, note) {
+async function addEquipmentNote(id, text) {
+  const item = allEquipment.find(x => x.id === id);
+  const existing = Array.isArray(item && item.notes) ? item.notes : [];
+  const entry = {
+    text,
+    at: new Date(),
+    byName: (currentUser && currentUser.displayName) || 'Unknown',
+    byUid: (currentUser && currentUser.uid) || null
+  };
   try {
-    await db.collection('equipment').doc(id).update({ conditionNote: note || null });
+    await db.collection('equipment').doc(id).update({ notes: [...existing, entry] });
   } catch (err) {
     console.error(err);
     alert('Could not save note: ' + err.message);
