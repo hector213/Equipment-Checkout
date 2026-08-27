@@ -90,12 +90,13 @@
   form.inline input, form.inline select{padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
   .bulk-textarea{width:100%;min-height:110px;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit;box-sizing:border-box;margin-bottom:10px;}
   .state-note-cell{display:flex;flex-direction:column;gap:4px;align-items:flex-start;width:100%;}
-  .state-note-text{font-size:12px;color:#555;white-space:normal;word-break:break-word;width:100%;}
+  .state-note-text{font-size:12px;color:#555;white-space:normal;word-break:break-word;width:100%;display:flex;flex-direction:column;gap:2px;}
   .notes-log{display:flex;flex-direction:column;gap:6px;width:100%;max-height:150px;overflow-y:auto;}
   .notes-log .state-note-text{border-top:1px solid var(--border);padding-top:4px;}
   .notes-log .state-note-text:first-child{border-top:none;padding-top:0;}
-  .note-line-head{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;}
-  .icon-btn{padding:0 6px;font-size:11px;line-height:1.8;flex-shrink:0;}
+  .note-line-body{display:flex;justify-content:space-between;align-items:baseline;gap:6px;}
+  .icon-btn{background:none;border:none;color:#999;font-size:1em;padding:0;line-height:1;cursor:pointer;flex-shrink:0;}
+  .icon-btn:hover{color:var(--red);}
   .label-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:16px;}
   .label-card{border:1px dashed #aaa;border-radius:6px;padding:10px;text-align:center;display:flex;flex-direction:column;align-items:center;}
   .label-card .qr{margin:0 auto 6px;display:flex;justify-content:center;}
@@ -826,8 +827,7 @@ function renderFieldLog(e, arrField, legacyField) {
   if (!raw.length) {
     if (!e[legacyField]) return '';
     return `<div class="state-note-text">
-      <div class="note-line-head"><span></span><button class="btn secondary small icon-btn delete-log-btn" data-id="${escapeHtml(e.id)}" data-field="${arrField}" data-legacy-field="${legacyField}" data-note-index="legacy" title="Delete">✕</button></div>
-      ${escapeHtml(e[legacyField])}
+      <div class="note-line-body"><span>${escapeHtml(e[legacyField])}</span><button class="icon-btn delete-log-btn" data-id="${escapeHtml(e.id)}" data-field="${arrField}" data-legacy-field="${legacyField}" data-note-index="legacy" title="Delete">✕</button></div>
     </div>`;
   }
   const indexed = raw.map((n, i) => ({ n, i })).reverse();
@@ -836,8 +836,8 @@ function renderFieldLog(e, arrField, legacyField) {
     const who = escapeHtml(n.byName || 'Unknown');
     const meta = when ? `<b>${who}</b> - ${escapeHtml(when)}` : `<b>${who}</b>`;
     return `<div class="state-note-text">
-      <div class="note-line-head"><span>${meta}</span><button class="btn secondary small icon-btn delete-log-btn" data-id="${escapeHtml(e.id)}" data-field="${arrField}" data-legacy-field="${legacyField}" data-note-index="${i}" title="Delete">✕</button></div>
-      ${escapeHtml(n.text || '')}
+      <div>${meta}</div>
+      <div class="note-line-body"><span>${escapeHtml(n.text || '')}</span><button class="icon-btn delete-log-btn" data-id="${escapeHtml(e.id)}" data-field="${arrField}" data-legacy-field="${legacyField}" data-note-index="${i}" title="Delete">✕</button></div>
     </div>`;
   }).join('') + `</div>`;
 }
