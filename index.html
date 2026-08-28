@@ -128,9 +128,11 @@
     /* Grid layouts are unreliable across page breaks in most browsers' print
        engines - a row can get sliced in half right through a barcode. Switch
        to a flex-wrap layout for printing only, and force each label to stay
-       whole on one page rather than splitting across two. */
-    .label-grid{display:flex !important;flex-wrap:wrap;gap:12px;}
-    .label-card{width:31%;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid;margin-bottom:14px;}
+       whole on one page rather than splitting across two. Zero gap/border so
+       adjacent cards sit flush - matches label sheets with no space cut
+       between labels (each card's own padding keeps QR/text off the edge). */
+    .label-grid{display:flex !important;flex-wrap:wrap;gap:0;}
+    .label-card{width:33.333%;box-sizing:border-box;border:none;margin:0;padding:10px;page-break-inside:avoid;break-inside:avoid;}
   }
 </style>
 </head>
