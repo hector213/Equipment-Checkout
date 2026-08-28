@@ -247,7 +247,7 @@
   <div class="tab" id="tab-manage">
     <div class="card no-print">
       <h3 style="margin-top:0;">Add Equipment</h3>
-      <p class="muted">Give the item a name (e.g. its asset tag, like <code>TC03</code>), pick its type, and a code is generated automatically as <code>Type-01</code>, <code>Type-02</code>, etc. That generated code is what the QR label encodes.</p>
+      <p class="muted">Give the item a name (e.g. its asset tag, like <code>TC03</code>), pick its type, and a code is generated automatically as <code>Type-01</code>, <code>Type-02</code>, etc. That generated code is what the QR label encodes. To add a batch of identical items at once (e.g. 20 batteries), set Qty above 1 - each one gets numbered off the name you enter (<code>Battery 1</code>, <code>Battery 2</code>, …) with its own auto-generated code.</p>
       <form class="inline" id="addEquipmentForm">
         <label>Name<input required id="eqName" placeholder="e.g. TC03"></label>
         <label>Device Type
@@ -263,6 +263,7 @@
             <option value="Finger Scanner">Finger Scanner</option>
           </select>
         </label>
+        <label>Qty<input type="number" id="eqQty" min="1" max="200" step="1" value="1" style="width:70px;"></label>
         <button class="btn" type="submit">Add Item</button>
       </form>
     </div>
@@ -1374,22 +1375,59 @@ document.getElementById('addEquipmentForm').addEventListener('submit', async (e)
   if (!firebaseReady) return alert('Configure Firebase first.');
   const name = document.getElementById('eqName').value.trim();
   const type = document.getElementById('eqType').value;
+  const qty = Math.max(1, Math.min(200, parseInt(document.getElementById('eqQty').value, 10) || 1));
   if (!name || !type) return;
-  const dupe = allEquipment.find(x => (x.name || '').trim().toLowerCase() === name.toLowerCase());
-  if (dupe) {
-    alert(`"${name}" already exists (code: ${dupe.id}). Pick a different name, or remove the existing one first if it's no longer needed.`);
-    return;
+
+  const usedCodes = new Set(allEquipment.map(x => x.id));
+  const existingNames = new Map(allEquipment.map(x => [(x.name || '').trim().toLowerCase(), x]));
+  const toAdd = [];
+  const skipped = [];
+
+  if (qty === 1) {
+    const dupe = existingNames.get(name.toLowerCase());
+    if (dupe) {
+      alert(`"${name}" already exists (code: ${dupe.id}). Pick a different name, or remove the existing one first if it's no longer needed.`);
+      return;
+    }
+    toAdd.push({ code: nextAutoDeviceCode(type, usedCodes), name });
+  } else {
+    // Bulk add: number each item off the base name so they stay distinct -
+    // e.g. "Battery" with qty 20 becomes "Battery 1".."Battery 20".
+    for (let n = 1; n <= qty; n++) {
+      const itemName = `${name} ${n}`;
+      if (existingNames.has(itemName.toLowerCase())) {
+        skipped.push(itemName);
+        continue;
+      }
+      const code = nextAutoDeviceCode(type, usedCodes);
+      usedCodes.add(code); // reserve so the next item in this batch doesn't reuse it
+      existingNames.set(itemName.toLowerCase(), { id: code });
+      toAdd.push({ code, name: itemName });
+    }
+    if (!toAdd.length) {
+      alert(`Nothing added - all ${skipped.length} name(s) already exist: ${skipped.join(', ')}`);
+      return;
+    }
+    if (!confirm(`Add ${toAdd.length} "${type}" item(s)${skipped.length ? `, skipping ${skipped.length} that already exist` : ''}?`)) return;
   }
+
   try {
-    const usedCodes = new Set(allEquipment.map(x => x.id));
-    const code = nextAutoDeviceCode(type, usedCodes);
-    await db.collection('equipment').doc(code).set({
-      name, deviceType: type, status: 'available',
-      assignedTo: null, assignedToName: null, assignedAt: null
+    const batch = db.batch();
+    toAdd.forEach(({ code, name }) => {
+      batch.set(db.collection('equipment').doc(code), {
+        name, deviceType: type, status: 'available',
+        assignedTo: null, assignedToName: null, assignedAt: null
+      });
     });
+    await batch.commit();
     e.target.reset();
+    document.getElementById('eqQty').value = 1;
     refreshLabelGrid();
-    alert(`Equipment added: ${name} (code: ${code})`);
+    let msg = toAdd.length === 1
+      ? `Equipment added: ${toAdd[0].name} (code: ${toAdd[0].code})`
+      : `Added ${toAdd.length} item(s): codes ${toAdd[0].code} – ${toAdd[toAdd.length - 1].code}.`;
+    if (skipped.length) msg += ` Skipped ${skipped.length} (already existed): ${skipped.join(', ')}.`;
+    alert(msg);
   } catch (err) {
     console.error(err);
     alert('Could not add equipment: ' + err.message);
