@@ -103,12 +103,6 @@
   .label-card .qr img, .label-card .qr canvas{display:block;margin:0 auto;}
   .label-card .code{font-size:11px;color:#777;word-break:break-all;}
   .label-card .name{font-size:13px;font-weight:600;margin:4px 0 2px;}
-  .avery-sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:16px;padding:10px;border:1px dashed #aaa;border-radius:6px;}
-  .label-card.avery-card{flex-direction:row;align-items:center;justify-content:flex-start;text-align:left;gap:8px;padding:6px;}
-  .label-card.avery-card .qr{margin:0;}
-  .label-card.avery-card .label-text{display:flex;flex-direction:column;justify-content:center;overflow:hidden;}
-  .label-card.avery-card .name{font-size:11px;margin:0;}
-  .label-card.avery-card .code{font-size:10px;margin:0;}
   select.type-select{margin-bottom:10px;}
   .muted{color:#777;font-size:13px;}
   .config-warning{background:#fdeceb;border:1px solid #f3b9b3;color:#7a2018;padding:12px 16px;border-radius:8px;margin-bottom:16px;font-size:14px;}
@@ -137,26 +131,6 @@
        whole on one page rather than splitting across two. */
     .label-grid{display:flex !important;flex-wrap:wrap;gap:12px;}
     .label-card{width:31%;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid;margin-bottom:14px;}
-
-    /* Avery 5160 (3 x 10, 30/sheet, 1in x 2.625in labels) - exact positioning
-       so QR codes land inside the die-cut labels instead of on the seams.
-       Each sheet's worth of labels is its own grid with a forced page break
-       after it, since browsers don't reliably repaginate a single grid at
-       physical sheet boundaries. */
-    @page{size:letter;margin:0;}
-    .label-grid.avery-mode{display:block !important;}
-    .avery-sheet{
-      display:grid;grid-template-columns:repeat(3,2.625in);grid-auto-rows:1in;
-      column-gap:0.125in;row-gap:0;width:8.5in;padding:0.5in 0.1875in;
-      box-sizing:border-box;border:none;margin:0;
-      page-break-after:always;break-after:page;
-    }
-    .avery-sheet:last-child{page-break-after:auto;break-after:auto;}
-    .label-card.avery-card{
-      width:2.625in;height:1in;box-sizing:border-box;border:none;border-radius:0;
-      padding:0.05in 0.08in;margin:0;overflow:hidden;
-      page-break-inside:avoid;break-inside:avoid;
-    }
   }
 </style>
 </head>
@@ -331,7 +305,6 @@
         </select>
         <label>Search<input id="labelSearchInput" placeholder="search by name or code"></label>
         <label id="labelShiftWrap" style="display:none;">Shift<select id="labelShiftSelect"><option value="">All shifts</option></select></label>
-        <label style="flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" id="averyModeCheckbox"> Avery 5160 sheet (3×10, 30/sheet)</label>
         <button class="btn secondary" id="printLabelsBtn">🖨️ Print This Set</button>
       </div>
       <p class="muted no-print" id="labelCountNote"></p>
@@ -1563,7 +1536,6 @@ document.getElementById('bulkImportAssocBtn').addEventListener('click', async ()
 document.getElementById('labelTypeSelect').addEventListener('change', () => { updateLabelShiftOptions(); refreshLabelGrid(); });
 document.getElementById('labelSearchInput').addEventListener('input', refreshLabelGrid);
 document.getElementById('labelShiftSelect').addEventListener('change', refreshLabelGrid);
-document.getElementById('averyModeCheckbox').addEventListener('change', refreshLabelGrid);
 document.getElementById('printLabelsBtn').addEventListener('click', () => window.print());
 
 function updateLabelShiftOptions() {
@@ -1583,18 +1555,14 @@ function updateLabelShiftOptions() {
   if (shifts.includes(current)) shiftSelect.value = current;
 }
 
-const AVERY_PER_SHEET = 30; // Avery 5160: 3 columns x 10 rows
-
 function refreshLabelGrid() {
   if (!firebaseReady) return;
   const type = document.getElementById('labelTypeSelect').value;
   const grid = document.getElementById('labelGrid');
   const countNote = document.getElementById('labelCountNote');
   grid.innerHTML = '';
-  grid.classList.remove('avery-mode');
   const search = document.getElementById('labelSearchInput').value.trim().toLowerCase();
   const shiftFilter = document.getElementById('labelShiftSelect').value;
-  const avery = document.getElementById('averyModeCheckbox').checked;
 
   let items = (type === 'equipment' ? allEquipment : allAssociates).slice();
   if (search) {
@@ -1608,62 +1576,30 @@ function refreshLabelGrid() {
   }
   items = items.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
+  items.forEach(data => {
+    const card = document.createElement('div');
+    card.className = 'label-card';
+    const qrHolder = document.createElement('div');
+    qrHolder.className = 'qr';
+    card.appendChild(qrHolder);
+    const nameEl = document.createElement('div');
+    nameEl.className = 'name';
+    nameEl.textContent = data.name + (data.shift ? ` (${data.shift})` : '');
+    const codeEl = document.createElement('div');
+    codeEl.className = 'code';
+    codeEl.textContent = data.id;
+    card.appendChild(nameEl);
+    card.appendChild(codeEl);
+    grid.appendChild(card);
+    new QRCode(qrHolder, { text: data.id, width: 66, height: 66 });
+  });
+
   if (!items.length) {
     grid.innerHTML = '<div class="muted">Nothing matches - try a different search, or add some above.</div>';
     countNote.textContent = '';
-    return;
-  }
-
-  if (avery) {
-    // Chunk into one grid per physical sheet (30 labels each) with a forced
-    // page break between sheets, so label N always lands in the same die-cut
-    // position no matter how many sheets are printed.
-    grid.classList.add('avery-mode');
-    for (let start = 0; start < items.length; start += AVERY_PER_SHEET) {
-      const sheet = document.createElement('div');
-      sheet.className = 'avery-sheet';
-      items.slice(start, start + AVERY_PER_SHEET).forEach(data => {
-        sheet.appendChild(buildLabelCard(data, true));
-      });
-      grid.appendChild(sheet);
-    }
-    const sheetCount = Math.ceil(items.length / AVERY_PER_SHEET);
-    const lastSheetCount = items.length - (sheetCount - 1) * AVERY_PER_SHEET;
-    countNote.textContent = `${items.length} label${items.length === 1 ? '' : 's'} ready to print - ${sheetCount} Avery 5160 sheet${sheetCount === 1 ? '' : 's'}` +
-      (lastSheetCount < AVERY_PER_SHEET ? ` (last sheet uses ${lastSheetCount} of 30 - the rest are left blank).` : '.');
   } else {
-    items.forEach(data => grid.appendChild(buildLabelCard(data, false)));
     countNote.textContent = `${items.length} label${items.length === 1 ? '' : 's'} ready to print.`;
   }
-}
-
-function buildLabelCard(data, avery) {
-  const card = document.createElement('div');
-  card.className = avery ? 'label-card avery-card' : 'label-card';
-  const qrHolder = document.createElement('div');
-  qrHolder.className = 'qr';
-  const nameEl = document.createElement('div');
-  nameEl.className = 'name';
-  nameEl.textContent = data.name + (data.shift ? ` (${data.shift})` : '');
-  const codeEl = document.createElement('div');
-  codeEl.className = 'code';
-  codeEl.textContent = data.id;
-
-  if (avery) {
-    const textWrap = document.createElement('div');
-    textWrap.className = 'label-text';
-    textWrap.appendChild(nameEl);
-    textWrap.appendChild(codeEl);
-    card.appendChild(qrHolder);
-    card.appendChild(textWrap);
-    new QRCode(qrHolder, { text: data.id, width: 56, height: 56 });
-  } else {
-    card.appendChild(qrHolder);
-    card.appendChild(nameEl);
-    card.appendChild(codeEl);
-    new QRCode(qrHolder, { text: data.id, width: 66, height: 66 });
-  }
-  return card;
 }
 // refreshLabelGrid() is invoked from startApp() after login, not here.
 
